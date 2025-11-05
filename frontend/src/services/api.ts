@@ -76,6 +76,7 @@ class ApiService {
             const transformedDocument: DocumentMetadata = {
               id: backendResponse.id || crypto.randomUUID(), // Fallback ID generation
               filename: backendResponse.filename,
+              originalFilename: backendResponse.original_filename,
               mimeType: backendResponse.mime_type,
               size: backendResponse.file_size,
               uploadedAt: new Date(backendResponse.created_at),
@@ -118,6 +119,7 @@ class ApiService {
     return {
       id: backendResponse.id || crypto.randomUUID(),
       filename: backendResponse.filename,
+      originalFilename: backendResponse.original_filename,
       mimeType: backendResponse.mime_type,
       size: backendResponse.file_size,
       uploadedAt: new Date(backendResponse.created_at),
@@ -130,6 +132,7 @@ class ApiService {
     return backendResponse.map(doc => ({
       id: doc.id || crypto.randomUUID(),
       filename: doc.filename,
+      originalFilename: doc.original_filename,
       mimeType: doc.mime_type,
       size: doc.file_size,
       uploadedAt: new Date(doc.created_at),

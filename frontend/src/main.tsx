@@ -3,10 +3,14 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { initializeDatabase } from './services/database'
+import { autoMigrateOnStartup } from './utils/migrateDocuments'
 
-// Initialize database before rendering the app
+// Initialize database and run migrations before rendering the app
 initializeDatabase()
-  .then(() => {
+  .then(async () => {
+    // Run document migration to ensure originalFilename is present
+    await autoMigrateOnStartup();
+    
     createRoot(document.getElementById('root')!).render(
       <StrictMode>
         <App />

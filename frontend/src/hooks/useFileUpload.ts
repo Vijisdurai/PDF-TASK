@@ -12,7 +12,7 @@ export interface UploadProgress {
 }
 
 export interface UseFileUploadReturn {
-  uploadFile: (file: File, fileId: string) => Promise<void>;
+  uploadFile: (file: File, fileId: string) => Promise<DocumentMetadata>;
   uploadProgress: Record<string, UploadProgress>;
   isUploading: boolean;
   clearProgress: (fileId: string) => void;
@@ -31,7 +31,7 @@ export const useFileUpload = (): UseFileUploadReturn => {
     }));
   }, []);
 
-  const uploadFile = useCallback(async (file: File, fileId: string) => {
+  const uploadFile = useCallback(async (file: File, fileId: string): Promise<DocumentMetadata> => {
     try {
       // Initialize progress tracking
       updateProgress(fileId, {
@@ -50,13 +50,12 @@ export const useFileUpload = (): UseFileUploadReturn => {
       // Store document metadata in IndexedDB
       try {
         await DatabaseService.addDocument(response.document);
-        console.log('Document stored in IndexedDB successfully');
       } catch (dbError) {
         console.error('Failed to store document in IndexedDB:', dbError);
         // Continue with the upload process even if local storage fails
       }
 
-      // Update application state
+      // Update application state immediately
       dispatch({ type: 'ADD_DOCUMENT', payload: response.document });
 
       // Mark upload as successful
@@ -65,7 +64,9 @@ export const useFileUpload = (): UseFileUploadReturn => {
         status: 'success'
       });
 
-      console.log('Document uploaded successfully:', response.document);
+
+      
+      return response.document;
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Upload failed';

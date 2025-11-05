@@ -25,12 +25,12 @@ export const useDocuments = (): UseDocumentsReturn => {
       const documents = localDocuments.map(doc => ({
         id: doc.id,
         filename: doc.filename,
+        originalFilename: doc.originalFilename,
         mimeType: doc.mimeType,
         size: doc.size,
         uploadedAt: doc.uploadedAt,
         convertedPath: doc.convertedPath
       }));
-      
       dispatch({ type: 'SET_DOCUMENTS', payload: documents });
     } catch (error) {
       console.error('Failed to load documents from local storage:', error);
@@ -45,6 +45,7 @@ export const useDocuments = (): UseDocumentsReturn => {
 
     try {
       const serverDocuments = await apiService.getDocuments();
+
       
       // Update local storage with server data
       for (const doc of serverDocuments) {

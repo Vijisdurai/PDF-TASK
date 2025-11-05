@@ -10,7 +10,10 @@ import {
   Search,
   Filter,
   Grid,
-  List
+  List,
+  CheckSquare,
+  Square,
+  Trash
 } from 'lucide-react';
 import type { DocumentMetadata } from '../contexts/AppContext';
 
@@ -18,6 +21,7 @@ export interface DocumentListProps {
   documents: DocumentMetadata[];
   onDocumentSelect: (document: DocumentMetadata) => void;
   onDocumentDelete?: (documentId: string) => void;
+  onBulkDelete?: (documentIds: string[]) => void;
   isLoading?: boolean;
 }
 
@@ -28,13 +32,28 @@ export const DocumentList: React.FC<DocumentListProps> = ({
   documents,
   onDocumentSelect,
   onDocumentDelete,
+  onBulkDelete,
   isLoading = false
 }) => {
+
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<SortBy>('date');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [selectedDocuments, setSelectedDocuments] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  // Handle keyboard shortcuts
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && selectedDocuments.size > 0) {
+        deselectAllDocuments();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedDocuments.size]);
 
   const getFileIcon = (mimeType: string) => {
     if (mimeType.startsWith('image/')) {
@@ -75,14 +94,17 @@ export const DocumentList: React.FC<DocumentListProps> = ({
 
   // Filter and sort documents
   const filteredAndSortedDocuments = React.useMemo(() => {
-    let filtered = documents.filter(doc =>
-      doc.filename.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    let filtered = documents.filter(doc => {
+      const displayName = doc.originalFilename || doc.filename;
+      return displayName.toLowerCase().includes(searchTerm.toLowerCase());
+    });
 
     filtered.sort((a, b) => {
       switch (sortBy) {
         case 'name':
-          return a.filename.localeCompare(b.filename);
+          const aName = a.originalFilename || a.filename;
+          const bName = b.originalFilename || b.filename;
+          return aName.localeCompare(bName);
         case 'date':
           return new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime();
         case 'size':
@@ -120,6 +142,33 @@ export const DocumentList: React.FC<DocumentListProps> = ({
       }
       return newSet;
     });
+  };
+
+  const selectAllDocuments = () => {
+    setSelectedDocuments(new Set(filteredAndSortedDocuments.map(doc => doc.id)));
+  };
+
+  const deselectAllDocuments = () => {
+    setSelectedDocuments(new Set());
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedDocuments.size === 0 || isBulkDeleting) return;
+    
+    const selectedIds = Array.from(selectedDocuments);
+    const confirmMessage = `Are you sure you want to delete ${selectedIds.length} selected document${selectedIds.length > 1 ? 's' : ''}?`;
+    
+    if (window.confirm(confirmMessage)) {
+      if (onBulkDelete) {
+        setIsBulkDeleting(true);
+        try {
+          await onBulkDelete(selectedIds);
+          setSelectedDocuments(new Set()); // Clear selection after successful delete
+        } finally {
+          setIsBulkDeleting(false);
+        }
+      }
+    }
   };
 
   if (isLoading) {
@@ -196,7 +245,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
       <div className="text-sm text-gray-400">
         {filteredAndSortedDocuments.length} of {documents.length} documents
         {selectedDocuments.size > 0 && (
-          <span className="ml-2">({selectedDocuments.size} selected)</span>
+          <span className="ml-2 text-ocean-400 font-medium">({selectedDocuments.size} selected)</span>
         )}
       </div>
 
@@ -208,18 +257,22 @@ export const DocumentList: React.FC<DocumentListProps> = ({
               key={document.id}
               onClick={() => handleDocumentClick(document)}
               className={`
-                relative group bg-navy-800 rounded-lg border border-navy-700 p-4 cursor-pointer 
+                relative group rounded-lg border p-4 cursor-pointer 
                 transition-all duration-200 hover:border-ocean-blue hover:shadow-lg hover:shadow-ocean-blue/20
-                ${selectedDocuments.has(document.id) ? 'ring-2 ring-ocean-blue' : ''}
+                ${selectedDocuments.has(document.id) 
+                  ? 'bg-navy-700 border-ocean-500 ring-2 ring-ocean-blue shadow-lg shadow-ocean-blue/10' 
+                  : 'bg-navy-800 border-navy-700'
+                }
               `}
             >
               {/* Selection Checkbox */}
-              <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute top-2 left-2 z-10 p-1 rounded bg-navy-900/50 backdrop-blur-sm hover:bg-navy-900/70 transition-colors">
                 <input
                   type="checkbox"
                   checked={selectedDocuments.has(document.id)}
                   onChange={(e) => toggleDocumentSelection(e, document.id)}
-                  className="w-4 h-4 text-ocean-blue bg-navy-700 border-navy-600 rounded focus:ring-ocean-blue"
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-4 h-4 text-ocean-blue bg-navy-700 border-navy-600 rounded focus:ring-ocean-blue cursor-pointer accent-ocean-500"
                 />
               </div>
 
@@ -242,8 +295,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({
 
                 {/* File Info */}
                 <div className="space-y-1 w-full">
-                  <h3 className="font-medium text-off-white text-sm truncate" title={document.filename}>
-                    {document.filename}
+                  <h3 className="font-medium text-off-white text-sm truncate" title={document.originalFilename || document.filename}>
+                    {document.originalFilename || document.filename}
                   </h3>
                   <div className="flex items-center justify-center space-x-2 text-xs text-gray-400">
                     <span>{getFileTypeLabel(document.mimeType)}</span>
@@ -266,19 +319,25 @@ export const DocumentList: React.FC<DocumentListProps> = ({
               key={document.id}
               onClick={() => handleDocumentClick(document)}
               className={`
-                group flex items-center justify-between p-4 bg-navy-800 rounded-lg border border-navy-700 
+                group flex items-center justify-between p-4 rounded-lg border 
                 cursor-pointer transition-all duration-200 hover:border-ocean-blue hover:shadow-lg hover:shadow-ocean-blue/20
-                ${selectedDocuments.has(document.id) ? 'ring-2 ring-ocean-blue' : ''}
+                ${selectedDocuments.has(document.id) 
+                  ? 'bg-navy-700 border-ocean-500 ring-2 ring-ocean-blue shadow-lg shadow-ocean-blue/10' 
+                  : 'bg-navy-800 border-navy-700'
+                }
               `}
             >
               <div className="flex items-center space-x-4 flex-1 min-w-0">
                 {/* Selection Checkbox */}
-                <input
-                  type="checkbox"
-                  checked={selectedDocuments.has(document.id)}
-                  onChange={(e) => toggleDocumentSelection(e, document.id)}
-                  className="w-4 h-4 text-ocean-blue bg-navy-700 border-navy-600 rounded focus:ring-ocean-blue opacity-0 group-hover:opacity-100 transition-opacity"
-                />
+                <div className="p-1 rounded bg-navy-900/50 backdrop-blur-sm hover:bg-navy-900/70 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={selectedDocuments.has(document.id)}
+                    onChange={(e) => toggleDocumentSelection(e, document.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-4 h-4 text-ocean-blue bg-navy-700 border-navy-600 rounded focus:ring-ocean-blue cursor-pointer accent-ocean-500"
+                  />
+                </div>
 
                 {/* File Icon */}
                 <div className="flex-shrink-0">
@@ -287,8 +346,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({
 
                 {/* File Info */}
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-medium text-off-white truncate" title={document.filename}>
-                    {document.filename}
+                  <h3 className="font-medium text-off-white truncate" title={document.originalFilename || document.filename}>
+                    {document.originalFilename || document.filename}
                   </h3>
                   <div className="flex items-center space-x-4 text-sm text-gray-400 mt-1">
                     <span>{getFileTypeLabel(document.mimeType)}</span>
@@ -336,6 +395,58 @@ export const DocumentList: React.FC<DocumentListProps> = ({
           <Search className="w-12 h-12 text-gray-600 mx-auto mb-3" />
           <h3 className="text-lg font-medium text-off-white mb-2">No documents found</h3>
           <p className="text-gray-400">Try adjusting your search terms</p>
+        </div>
+      )}
+
+      {/* Floating Action Panel */}
+      {selectedDocuments.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 animate-slide-up">
+          <div className="bg-navy-800 border border-ocean-500 rounded-2xl shadow-2xl px-6 py-4 flex items-center gap-4 backdrop-blur-sm ring-1 ring-ocean-400/20">
+            <div className="flex items-center gap-2">
+              <CheckSquare className="w-5 h-5 text-ocean-400" />
+              <span className="text-off-white font-medium">
+                {selectedDocuments.size} selected
+              </span>
+            </div>
+            
+            <div className="h-6 w-px bg-navy-600"></div>
+            
+            <div className="flex items-center gap-2">
+              {selectedDocuments.size === filteredAndSortedDocuments.length ? (
+                <button
+                  onClick={deselectAllDocuments}
+                  className="flex items-center gap-2 px-3 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors text-sm font-medium"
+                  title="Deselect all documents"
+                >
+                  <Square className="w-4 h-4" />
+                  Deselect All
+                </button>
+              ) : (
+                <button
+                  onClick={selectAllDocuments}
+                  className="flex items-center gap-2 px-3 py-2 bg-ocean-600 hover:bg-ocean-700 text-white rounded-lg transition-colors text-sm font-medium"
+                  title="Select all documents"
+                >
+                  <CheckSquare className="w-4 h-4" />
+                  Select All
+                </button>
+              )}
+              
+              <button
+                onClick={handleBulkDelete}
+                disabled={isBulkDeleting}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm font-medium"
+                title="Delete selected documents"
+              >
+                {isBulkDeleting ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Trash className="w-4 h-4" />
+                )}
+                {isBulkDeleting ? 'Deleting...' : 'Delete Selected'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

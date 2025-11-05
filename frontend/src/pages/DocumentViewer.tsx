@@ -80,7 +80,7 @@ const DocumentViewerPage: React.FC = () => {
   const documentUrl = `/api/documents/${document.id}/file`;
 
   return (
-    <div className="flex h-full">
+    <div className="flex min-h-full">
       {/* Main viewer area */}
       <div className="flex-1 bg-navy-800 border-r border-navy-700">
         <DocumentViewer

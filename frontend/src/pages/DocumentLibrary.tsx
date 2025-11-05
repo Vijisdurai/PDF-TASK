@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RefreshCw, Upload as UploadIcon, AlertCircle } from 'lucide-react';
+import { RefreshCw, Upload as UploadIcon, AlertCircle, CheckCircle } from 'lucide-react';
 import FileUpload from '../components/FileUpload';
 import DocumentList from '../components/DocumentList';
 import { useDocuments } from '../hooks/useDocuments';
@@ -11,15 +11,24 @@ const DocumentLibrary: React.FC = () => {
   const { documents, isLoading, error, refreshDocuments, deleteDocument, selectDocument } = useDocuments();
   const [showUpload, setShowUpload] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
 
   const handleUploadSuccess = (document: DocumentMetadata) => {
     setUploadError(null);
-    // Document is already added to state by the upload hook
+    const fileName = document.originalFilename || document.filename;
+    setUploadSuccess(`${fileName} uploaded successfully!`);
+    
+    // Clear success message after 5 seconds
+    setTimeout(() => setUploadSuccess(null), 5000);
+    
+    // Trigger immediate refresh to update the document list
+    refreshDocuments();
     console.log('Document uploaded successfully:', document);
   };
 
   const handleUploadError = (error: string) => {
     setUploadError(error);
+    setUploadSuccess(null); // Clear any success message
     console.error('Upload error:', error);
   };
 
@@ -35,6 +44,23 @@ const DocumentLibrary: React.FC = () => {
     }
   };
 
+  const handleBulkDelete = async (documentIds: string[]) => {
+    try {
+      // Delete documents one by one using the existing delete function
+      for (const documentId of documentIds) {
+        await deleteDocument(documentId);
+      }
+      
+      // Show success message
+      setUploadSuccess(`Successfully deleted ${documentIds.length} document${documentIds.length > 1 ? 's' : ''}!`);
+      setTimeout(() => setUploadSuccess(null), 5000);
+      
+    } catch (error) {
+      console.error('Failed to delete documents:', error);
+      setUploadError('Failed to delete some documents. Please try again.');
+    }
+  };
+
   const handleRefresh = async () => {
     try {
       await refreshDocuments();
@@ -45,7 +71,7 @@ const DocumentLibrary: React.FC = () => {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-6 max-w-7xl mx-auto min-h-full">
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
@@ -103,6 +129,17 @@ const DocumentLibrary: React.FC = () => {
           </div>
         )}
 
+        {/* Success Display */}
+        {uploadSuccess && (
+          <div className="mb-4 p-4 bg-green-900/30 border border-green-700 rounded-lg">
+            <div className="flex items-center space-x-2">
+              <CheckCircle className="w-5 h-5 text-green-400" />
+              <span className="text-green-400 font-medium">Success</span>
+            </div>
+            <p className="text-green-300 mt-1">{uploadSuccess}</p>
+          </div>
+        )}
+
         {/* Upload Component */}
         {showUpload && (
           <div className="mb-6 p-6 bg-navy-800 rounded-lg border border-navy-700">
@@ -119,6 +156,7 @@ const DocumentLibrary: React.FC = () => {
         documents={documents}
         onDocumentSelect={handleDocumentSelect}
         onDocumentDelete={handleDocumentDelete}
+        onBulkDelete={handleBulkDelete}
         isLoading={isLoading}
       />
 

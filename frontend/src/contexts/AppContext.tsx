@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 export interface DocumentMetadata {
   id: string;
   filename: string;
+  originalFilename?: string; // The original filename before processing
   mimeType: string;
   size: number;
   uploadedAt: Date;

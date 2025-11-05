@@ -27,7 +27,7 @@ export class AnnotationDatabase extends Dexie {
     
     // Define schemas
     this.version(1).stores({
-      documents: 'id, filename, mimeType, uploadedAt, syncStatus',
+      documents: 'id, filename, originalFilename, mimeType, uploadedAt, syncStatus',
       annotations: 'id, documentId, page, [documentId+page], createdAt, syncStatus'
     });
   }

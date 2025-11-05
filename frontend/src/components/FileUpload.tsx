@@ -134,8 +134,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   // Auto-upload files when they are added
   const handleUpload = useCallback(async (uploadFileData: UploadFile) => {
     try {
-      await uploadFile(uploadFileData.file, uploadFileData.id);
-      onUploadSuccess?.(uploadFileData.file as any); // Will be properly typed when integrated
+      const result = await uploadFile(uploadFileData.file, uploadFileData.id);
+      // The uploadFile hook should return the document metadata
+      // For now, we'll trigger the success callback without the document
+      // The parent component will handle the refresh
+      onUploadSuccess?.(result as any);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Upload failed';
       onUploadError?.(errorMessage);
