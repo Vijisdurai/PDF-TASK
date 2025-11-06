@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 from typing import List
 import os
@@ -104,11 +104,13 @@ async def upload_document(
         ]:
             try:
                 conversion_service = ConversionService()
-                converted_path = await conversion_service.convert_to_pdf(file_path, unique_filename)
+                # Use original filename for better PDF naming
+                converted_path = await conversion_service.convert_to_pdf(file_path, file.filename)
                 document = document_service.update_converted_path(document.id, converted_path)
             except Exception as e:
                 # Log conversion error but don't fail the upload
                 print(f"Conversion failed for {file.filename}: {str(e)}")
+                # You can still view the original file, but PDF features won't be available
         
         return document
         
@@ -160,59 +162,101 @@ async def get_document_file(
     db: Session = Depends(get_db)
 ):
     """Stream document file content"""
+    from fastapi.responses import FileResponse, JSONResponse
+    
     document_service = DocumentService(db)
     document = document_service.get_document(document_id)
     
     if not document:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={
+        return JSONResponse(
+            status_code=404,
+            content={
                 "error": {
                     "code": "DOCUMENT_NOT_FOUND",
-                    "message": f"Document with ID {document_id} not found",
-                    "details": {}
+                    "message": "Document not found", 
+                    "document_id": document_id
                 }
-            }
+            },
+            headers={"Content-Type": "application/json"}
         )
     
     # Determine which file to serve (converted PDF if available, otherwise original)
     file_path = document.converted_path if document.converted_path else document.file_path
     
     if not os.path.exists(file_path):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={
+        return JSONResponse(
+            status_code=404,
+            content={
                 "error": {
                     "code": "FILE_NOT_FOUND",
-                    "message": "Document file not found on disk",
-                    "details": {"file_path": file_path}
+                    "message": "File not found on disk", 
+                    "path": file_path
                 }
-            }
+            },
+            headers={"Content-Type": "application/json"}
         )
     
-    # Determine content type for response
-    if document.converted_path and file_path == document.converted_path:
+    # Validate file size
+    file_size = os.path.getsize(file_path)
+    if file_size == 0:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": {
+                    "code": "EMPTY_FILE",
+                    "message": "File is empty",
+                    "path": file_path
+                }
+            },
+            headers={"Content-Type": "application/json"}
+        )
+    
+    # For PDF files, validate PDF signature
+    if file_path.endswith(".pdf"):
+        try:
+            with open(file_path, 'rb') as f:
+                header = f.read(5)
+                if header != b'%PDF-':
+                    return JSONResponse(
+                        status_code=500,
+                        content={
+                            "error": {
+                                "code": "INVALID_PDF",
+                                "message": "File is not a valid PDF",
+                                "path": file_path
+                            }
+                        },
+                        headers={"Content-Type": "application/json"}
+                    )
+        except Exception as e:
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": {
+                        "code": "FILE_READ_ERROR",
+                        "message": f"Cannot read file: {str(e)}",
+                        "path": file_path
+                    }
+                },
+                headers={"Content-Type": "application/json"}
+            )
+    
+    # Detect MIME type dynamically
+    if file_path.endswith(".pdf"):
         content_type = "application/pdf"
         filename = f"{Path(document.original_filename).stem}.pdf"
     else:
         content_type = document.mime_type
         filename = document.original_filename
     
-    def file_generator():
-        """Generator function to stream file content in chunks"""
-        with open(file_path, "rb") as file:
-            while True:
-                chunk = file.read(8192)  # 8KB chunks
-                if not chunk:
-                    break
-                yield chunk
-    
-    return StreamingResponse(
-        file_generator(),
+    # Return a binary FileResponse for proper PDF streaming
+    return FileResponse(
+        path=file_path,
         media_type=content_type,
+        filename=filename,
         headers={
-            "Content-Disposition": f"inline; filename=\"{filename}\"",
-            "Cache-Control": "public, max-age=3600"  # Cache for 1 hour
+            "Cache-Control": "no-store, must-revalidate",
+            "Content-Disposition": f'inline; filename="{filename}"',
         }
     )
 

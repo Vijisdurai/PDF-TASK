@@ -3,9 +3,13 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import AnnotationOverlay from './AnnotationOverlay';
+import { fetchAndValidatePDF, getPDFErrorMessage } from '../utils/pdfValidator';
 
-// Set up PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Set up PDF.js worker with proper URL
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.js',
+  import.meta.url
+).toString();
 
 interface AnnotationPoint {
   id: string;
@@ -74,7 +78,66 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
       try {
         setState(prev => ({ ...prev, isLoading: true, error: null }));
 
-        const loadingTask = pdfjsLib.getDocument(documentUrl);
+        // Fetch with CORS support and proper headers
+        const response = await fetch(documentUrl, { 
+          mode: "cors",
+          headers: {
+            'Accept': 'application/pdf'
+          }
+        });
+        
+        if (!response.ok) {
+          // Try to get error details from response
+          let errorDetail = response.statusText;
+          try {
+            const errorData = await response.json();
+            if (errorData.error) {
+              errorDetail = typeof errorData.error === 'string' ? errorData.error : errorData.error.message;
+            }
+          } catch {
+            // If not JSON, use status text
+          }
+          throw new Error(`HTTP ${response.status}: ${errorDetail}`);
+        }
+
+        // Verify Content-Type before processing
+        const contentType = response.headers.get("Content-Type");
+        if (!contentType?.includes("application/pdf")) {
+          const text = await response.text();
+          console.error("Server returned non-PDF content:", text.slice(0, 200));
+          throw new Error("Server returned non-PDF content - check server logs");
+        }
+
+        // Get binary data and validate size
+        const arrayBuffer = await response.arrayBuffer();
+        
+        if (arrayBuffer.byteLength === 0) {
+          throw new Error("Received empty file");
+        }
+        
+        if (arrayBuffer.byteLength < 1024) {
+          throw new Error("File too small to be a valid PDF");
+        }
+        
+        // Validate PDF signature
+        const uint8Array = new Uint8Array(arrayBuffer);
+        const pdfSignature = [0x25, 0x50, 0x44, 0x46, 0x2D]; // %PDF-
+        
+        if (uint8Array.length < 5 || !pdfSignature.every((byte, i) => uint8Array[i] === byte)) {
+          throw new Error("File does not have a valid PDF signature");
+        }
+
+        // Load with PDF.js with error handling
+        const loadingTask = pdfjsLib.getDocument({ 
+          data: arrayBuffer,
+          verbosity: 0 // Reduce PDF.js console warnings
+        });
+        
+        // Handle PDF.js specific errors
+        loadingTask.onPassword = () => {
+          throw new Error("PDF is password protected");
+        };
+        
         const pdf = await loadingTask.promise;
 
         setState(prev => ({
@@ -89,9 +152,24 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
         }
       } catch (error) {
         console.error('Error loading PDF:', error);
+        
+        let errorMessage = 'Failed to display PDF — file may be missing or invalid.';
+        if (error instanceof Error) {
+          const message = error.message.toLowerCase();
+          if (message.includes('invalid pdf') || message.includes('pdf signature')) {
+            errorMessage = 'The document is not a valid PDF file';
+          } else if (message.includes('404') || message.includes('not found')) {
+            errorMessage = 'Document not found';
+          } else if (message.includes('500') || message.includes('server error')) {
+            errorMessage = 'Server error while loading document';
+          } else if (message.includes('network') || message.includes('fetch')) {
+            errorMessage = 'Network error while loading document';
+          }
+        }
+        
         setState(prev => ({
           ...prev,
-          error: 'Failed to load PDF document',
+          error: errorMessage,
           isLoading: false
         }));
       }
@@ -242,14 +320,21 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
   if (state.error) {
     return (
       <motion.div
-        className="flex items-center justify-center h-full"
+        className="flex flex-col items-center justify-center h-full text-gray-300"
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.3 }}
       >
-        <div className="text-center text-red-400">
-          <p className="text-lg font-semibold mb-2">Error</p>
-          <p>{state.error}</p>
+        <div className="text-center">
+          <p className="text-lg font-semibold mb-2 text-red-400">Error</p>
+          <p className="mb-4">{state.error}</p>
+          <a 
+            href={documentUrl} 
+            download 
+            className="inline-block px-4 py-2 bg-ocean-blue text-white rounded hover:bg-blue-600 transition-colors"
+          >
+            Download PDF instead
+          </a>
         </div>
       </motion.div>
     );

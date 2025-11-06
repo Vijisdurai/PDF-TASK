@@ -3,6 +3,7 @@ import { useParams, Navigate } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
 import { useDatabase } from '../hooks/useDatabase';
 import DocumentViewer from '../components/DocumentViewer';
+import { apiService } from '../services/api';
 
 interface AnnotationPoint {
   id: string;
@@ -76,8 +77,14 @@ const DocumentViewerPage: React.FC = () => {
     timestamp: ann.createdAt.getTime()
   }));
 
-  // Construct document URL for viewing
-  const documentUrl = `/api/documents/${document.id}/file`;
+  // Construct document URL for viewing using the API service
+  const documentUrl = apiService.getDocumentFileUrl(document.id);
+  
+  // Determine the effective MIME type - if document has been converted to PDF, use PDF MIME type
+  const effectiveMimeType = document.convertedPath ? 'application/pdf' : document.mimeType;
+  const effectiveFilename = document.convertedPath 
+    ? `${document.originalFilename || document.filename}.pdf`
+    : (document.originalFilename || document.filename);
 
   return (
     <div className="flex min-h-full">
@@ -86,8 +93,8 @@ const DocumentViewerPage: React.FC = () => {
         <DocumentViewer
           documentId={document.id}
           documentUrl={documentUrl}
-          mimeType={document.mimeType}
-          filename={document.filename}
+          mimeType={effectiveMimeType}
+          filename={effectiveFilename}
           onAnnotationCreate={handleAnnotationCreate}
           annotations={overlayAnnotations}
           onAnnotationClick={handleAnnotationClick}

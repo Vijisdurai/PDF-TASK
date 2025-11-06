@@ -2,6 +2,7 @@ import os
 import subprocess
 import asyncio
 import uuid
+import platform
 from pathlib import Path
 from typing import Optional
 from fastapi import HTTPException, status
@@ -59,6 +60,16 @@ class ConversionService:
                 # Move the converted file to final location
                 os.rename(converted_file, output_path)
                 
+                # Validate the generated PDF
+                if not os.path.exists(output_path) or os.path.getsize(output_path) < 1024:
+                    raise Exception("Conversion failed or invalid PDF generated")
+                
+                # Verify PDF signature
+                with open(output_path, 'rb') as f:
+                    header = f.read(5)
+                    if header != b'%PDF-':
+                        raise Exception("Generated file is not a valid PDF")
+                
                 return output_path
                 
             finally:
@@ -80,16 +91,49 @@ class ConversionService:
             )
     
     async def _run_libreoffice_conversion(self, input_path: str, output_dir: str) -> None:
-        """Run LibreOffice headless conversion"""
+        """Run LibreOffice headless conversion with platform-specific handling"""
         try:
+            # Determine LibreOffice executable based on platform
+            if platform.system() == "Windows":
+                # Common LibreOffice paths on Windows
+                possible_paths = [
+                    "libreoffice",
+                    "soffice",
+                    r"C:\Program Files\LibreOffice\program\soffice.exe",
+                    r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+                ]
+                
+                libreoffice_cmd = None
+                for path in possible_paths:
+                    try:
+                        # Test if the command exists
+                        test_process = await asyncio.create_subprocess_exec(
+                            path, "--version",
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE
+                        )
+                        await test_process.communicate()
+                        if test_process.returncode == 0:
+                            libreoffice_cmd = path
+                            break
+                    except (FileNotFoundError, OSError):
+                        continue
+                
+                if not libreoffice_cmd:
+                    raise FileNotFoundError("LibreOffice not found in common Windows locations")
+            else:
+                libreoffice_cmd = "libreoffice"
+            
             # LibreOffice command for headless conversion
             cmd = [
-                "libreoffice",
+                libreoffice_cmd,
                 "--headless",
                 "--convert-to", "pdf",
                 "--outdir", output_dir,
                 input_path
             ]
+            
+            print(f"Running conversion command: {' '.join(cmd)}")
             
             # Run the conversion with timeout
             process = await asyncio.create_subprocess_exec(
@@ -100,6 +144,9 @@ class ConversionService:
             
             try:
                 stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60.0)
+                print(f"LibreOffice stdout: {stdout.decode()}")
+                if stderr:
+                    print(f"LibreOffice stderr: {stderr.decode()}")
             except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()
@@ -107,12 +154,14 @@ class ConversionService:
             
             if process.returncode != 0:
                 error_msg = stderr.decode() if stderr else "Unknown LibreOffice error"
-                raise Exception(f"LibreOffice conversion failed: {error_msg}")
+                raise Exception(f"LibreOffice conversion failed (exit code {process.returncode}): {error_msg}")
                 
         except FileNotFoundError:
             raise Exception(
                 "LibreOffice not found. Please install LibreOffice for document conversion. "
-                "On Ubuntu/Debian: sudo apt-get install libreoffice"
+                "Windows: Download from https://www.libreoffice.org/download/download/ and add to PATH "
+                "Ubuntu/Debian: sudo apt-get install libreoffice "
+                "macOS: brew install --cask libreoffice"
             )
     
     def _find_converted_pdf(self, temp_dir: str, base_name: str) -> Optional[str]:

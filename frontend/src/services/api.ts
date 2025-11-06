@@ -1,6 +1,6 @@
 import type { DocumentMetadata, Annotation } from '../contexts/AppContext';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : 'http://localhost:8000/api');
 
 export interface UploadResponse {
   document: DocumentMetadata;
@@ -141,11 +141,29 @@ class ApiService {
   }
 
   async getDocumentFile(documentId: string): Promise<Blob> {
-    const response = await fetch(`${API_BASE_URL}/documents/${documentId}/file`);
+    const response = await fetch(`${API_BASE_URL}/documents/${documentId}/file`, {
+      headers: {
+        'Accept': 'application/pdf,application/octet-stream,*/*'
+      }
+    });
     if (!response.ok) {
-      throw new Error(`Failed to fetch document file: ${response.statusText}`);
+      let errorMessage = `Failed to fetch document file: ${response.statusText}`;
+      try {
+        const errorData = await response.json();
+        if (errorData.error?.message) {
+          errorMessage = errorData.error.message;
+        }
+      } catch {
+        // Use default error message if response is not JSON
+      }
+      throw new Error(errorMessage);
     }
     return response.blob();
+  }
+
+  // Helper method to get document file URL for direct use in components
+  getDocumentFileUrl(documentId: string): string {
+    return `${API_BASE_URL}/documents/${documentId}/file`;
   }
 
   async deleteDocument(documentId: string): Promise<void> {
