@@ -1,0 +1,130 @@
+/* PDF Viewer Specific Styles */
+
+/* Ensure proper flex behavior for PDF viewer container */
+.pdf-viewer-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Toolbar styling to prevent overlay */
+.pdf-toolbar {
+  flex-shrink: 0;
+  z-index: 10;
+  min-height: 60px;
+  background: #0f172a; /* navy-900 equivalent */
+  border-bottom: 1px solid #334155; /* navy-700 equivalent */
+}
+
+/* Canvas wrapper for proper centering and scrolling */
+.pdf-canvas-wrapper {
+  flex-grow: 1;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #1e293b; /* navy-800 equivalent */
+  min-height: 0; /* Important for flex containers */
+}
+
+/* Canvas styling */
+.pdf-canvas {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  border: 1px solid #475569; /* navy-600 equivalent */
+  display: block;
+}
+
+/* Smooth transitions for zoom controls */
+.pdf-zoom-button {
+  transition: all 0.2s ease-in-out;
+}
+
+.pdf-zoom-button:hover {
+  transform: scale(1.05);
+}
+
+.pdf-zoom-button:active {
+  transform: scale(0.95);
+}
+
+/* Loading spinner animation */
+.pdf-loading-spinner {
+  border: 2px solid transparent;
+  border-top: 2px solid #0ea5e9; /* ocean-blue equivalent */
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Error state styling */
+.pdf-error-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #d1d5db; /* gray-300 equivalent */
+  text-align: center;
+}
+
+.pdf-error-title {
+  color: #f87171; /* red-400 equivalent */
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.pdf-download-button {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background-color: #0ea5e9; /* ocean-blue equivalent */
+  color: white;
+  border-radius: 0.375rem;
+  text-decoration: none;
+  transition: background-color 0.2s ease-in-out;
+}
+
+.pdf-download-button:hover {
+  background-color: #0284c7; /* blue-600 equivalent */
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .pdf-toolbar {
+    padding: 0.5rem;
+    min-height: 50px;
+  }
+  
+  .pdf-toolbar .flex {
+    gap: 0.25rem;
+  }
+  
+  .pdf-toolbar button {
+    padding: 0.375rem;
+  }
+  
+  .pdf-toolbar span {
+    font-size: 0.75rem;
+    padding: 0 0.5rem;
+  }
+}
+
+/* Focus styles for accessibility */
+.pdf-toolbar button:focus {
+  outline: 2px solid #0ea5e9;
+  outline-offset: 2px;
+}
+
+/* Ensure proper cursor behavior */
+.pdf-canvas-wrapper[data-dragging="true"] {
+  cursor: grabbing !important;
+}
+
+.pdf-canvas-wrapper[data-dragging="false"] {
+  cursor: grab;
+}

@@ -1,9 +1,8 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw, Maximize2 } from 'lucide-react';
 import AnnotationOverlay from './AnnotationOverlay';
-import { fetchAndValidatePDF, getPDFErrorMessage } from '../utils/pdfValidator';
 
 // Set up PDF.js worker with proper URL
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -63,6 +62,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null);
   const [state, setState] = useState<PDFViewerState>({
     pdfDocument: null,
     totalPages: 0,
@@ -78,26 +78,10 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
       try {
         setState(prev => ({ ...prev, isLoading: true, error: null }));
 
-        // Fetch with CORS support and proper headers
-        const response = await fetch(documentUrl, { 
-          mode: "cors",
-          headers: {
-            'Accept': 'application/pdf'
-          }
-        });
-        
+        const response = await fetch(documentUrl, { mode: "cors" });
+
         if (!response.ok) {
-          // Try to get error details from response
-          let errorDetail = response.statusText;
-          try {
-            const errorData = await response.json();
-            if (errorData.error) {
-              errorDetail = typeof errorData.error === 'string' ? errorData.error : errorData.error.message;
-            }
-          } catch {
-            // If not JSON, use status text
-          }
-          throw new Error(`HTTP ${response.status}: ${errorDetail}`);
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
         // Verify Content-Type before processing
@@ -105,39 +89,21 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
         if (!contentType?.includes("application/pdf")) {
           const text = await response.text();
           console.error("Server returned non-PDF content:", text.slice(0, 200));
-          throw new Error("Server returned non-PDF content - check server logs");
+          throw new Error("Invalid response: not a PDF");
         }
 
-        // Get binary data and validate size
+        // Get binary data and load with PDF.js
         const arrayBuffer = await response.arrayBuffer();
-        
-        if (arrayBuffer.byteLength === 0) {
-          throw new Error("Received empty file");
-        }
-        
-        if (arrayBuffer.byteLength < 1024) {
-          throw new Error("File too small to be a valid PDF");
-        }
-        
+
         // Validate PDF signature
         const uint8Array = new Uint8Array(arrayBuffer);
         const pdfSignature = [0x25, 0x50, 0x44, 0x46, 0x2D]; // %PDF-
-        
+
         if (uint8Array.length < 5 || !pdfSignature.every((byte, i) => uint8Array[i] === byte)) {
           throw new Error("File does not have a valid PDF signature");
         }
 
-        // Load with PDF.js with error handling
-        const loadingTask = pdfjsLib.getDocument({ 
-          data: arrayBuffer,
-          verbosity: 0 // Reduce PDF.js console warnings
-        });
-        
-        // Handle PDF.js specific errors
-        loadingTask.onPassword = () => {
-          throw new Error("PDF is password protected");
-        };
-        
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
         const pdf = await loadingTask.promise;
 
         setState(prev => ({
@@ -152,7 +118,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
         }
       } catch (error) {
         console.error('Error loading PDF:', error);
-        
+
         let errorMessage = 'Failed to display PDF — file may be missing or invalid.';
         if (error instanceof Error) {
           const message = error.message.toLowerCase();
@@ -166,7 +132,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
             errorMessage = 'Network error while loading document';
           }
         }
-        
+
         setState(prev => ({
           ...prev,
           error: errorMessage,
@@ -180,11 +146,17 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
     }
   }, [documentUrl, onDocumentLoad]);
 
-  // Render current page
+  // Render current page with proper task cancellation
   const renderPage = useCallback(async () => {
     if (!state.pdfDocument || !canvasRef.current) return;
 
     try {
+      // Cancel previous render task if still running
+      if (renderTaskRef.current) {
+        renderTaskRef.current.cancel();
+        renderTaskRef.current = null;
+      }
+
       const page = await state.pdfDocument.getPage(currentPage);
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
@@ -204,15 +176,28 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
       // Clear canvas
       context.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Render page
+      // Create render context
       const renderContext = {
         canvasContext: context,
         viewport: viewport
       };
 
-      await page.render(renderContext).promise;
+      // Start new render task
+      const renderTask = page.render(renderContext);
+      renderTaskRef.current = renderTask;
+
+      try {
+        await renderTask.promise;
+        renderTaskRef.current = null;
+      } catch (error: any) {
+        // Ignore cancellation errors, log others
+        if (error?.name !== 'RenderingCancelledException') {
+          console.error('Error rendering page:', error);
+        }
+        renderTaskRef.current = null;
+      }
     } catch (error) {
-      console.error('Error rendering page:', error);
+      console.error('Error setting up page render:', error);
     }
   }, [state.pdfDocument, currentPage, zoomScale]);
 
@@ -220,6 +205,16 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
   useEffect(() => {
     renderPage();
   }, [renderPage]);
+
+  // Cleanup render tasks on unmount
+  useEffect(() => {
+    return () => {
+      if (renderTaskRef.current) {
+        renderTaskRef.current.cancel();
+        renderTaskRef.current = null;
+      }
+    };
+  }, []);
 
   // Update container dimensions when container size changes
   useEffect(() => {
@@ -296,6 +291,36 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
     onPanChange({ x: 0, y: 0 });
   }, [onZoomChange, onPanChange]);
 
+  // Calculate fit-to-screen scale
+  const handleFitToScreen = useCallback(async () => {
+    if (!state.pdfDocument || !containerRef.current) return;
+
+    try {
+      const page = await state.pdfDocument.getPage(currentPage);
+      const viewport = page.getViewport({ scale: 1 });
+      const container = containerRef.current;
+      
+      // Account for padding and margins
+      const padding = 40;
+      const availableWidth = container.offsetWidth - padding;
+      const availableHeight = container.offsetHeight - padding;
+      
+      // Calculate scale to fit both width and height
+      const scaleX = availableWidth / viewport.width;
+      const scaleY = availableHeight / viewport.height;
+      
+      // Use the smaller scale to ensure the entire page fits
+      const fitScale = Math.min(scaleX, scaleY, 3); // Cap at 3x zoom
+      
+      if (fitScale > 0) {
+        onZoomChange(fitScale);
+        onPanChange({ x: 0, y: 0 });
+      }
+    } catch (error) {
+      console.error('Error calculating fit-to-screen scale:', error);
+    }
+  }, [state.pdfDocument, currentPage, onZoomChange, onPanChange]);
+
   if (state.isLoading) {
     return (
       <motion.div
@@ -320,21 +345,14 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
   if (state.error) {
     return (
       <motion.div
-        className="flex flex-col items-center justify-center h-full text-gray-300"
+        className="flex items-center justify-center h-full"
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.3 }}
       >
-        <div className="text-center">
-          <p className="text-lg font-semibold mb-2 text-red-400">Error</p>
-          <p className="mb-4">{state.error}</p>
-          <a 
-            href={documentUrl} 
-            download 
-            className="inline-block px-4 py-2 bg-ocean-blue text-white rounded hover:bg-blue-600 transition-colors"
-          >
-            Download PDF instead
-          </a>
+        <div className="text-center text-red-400">
+          <p className="text-lg font-semibold mb-2">Error</p>
+          <p>{state.error}</p>
         </div>
       </motion.div>
     );
@@ -420,11 +438,23 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
           </motion.button>
 
           <motion.button
+            onClick={handleFitToScreen}
+            className="p-2 rounded bg-navy-800 text-off-white hover:bg-navy-700"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            transition={{ duration: 0.1 }}
+            title="Fit to Screen"
+          >
+            <Maximize2 size={16} />
+          </motion.button>
+
+          <motion.button
             onClick={handleResetView}
             className="p-2 rounded bg-navy-800 text-off-white hover:bg-navy-700"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             transition={{ duration: 0.1 }}
+            title="Reset View (100%)"
           >
             <RotateCcw size={16} />
           </motion.button>
