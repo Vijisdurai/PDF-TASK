@@ -6,9 +6,7 @@ interface ImageViewerProps {
   documentUrl: string;
   documentId: string;
   zoomScale?: number;
-  panOffset?: { x: number; y: number };
   onZoomChange?: (scale: number) => void;
-  onPanChange?: (pan: { x: number; y: number }) => void;
 
   annotations?: ImageAnnotation[];
   onAnnotationCreate?: (a: Omit<ImageAnnotation, "id" | "createdAt" | "updatedAt">) => void;
@@ -205,9 +203,7 @@ export default function ImageViewer({
   documentUrl,
   documentId,
   zoomScale: propZoom,
-  panOffset: propPan,
   onZoomChange,
-  onPanChange,
 
   annotations: externalAnnotations,
   onAnnotationCreate,
@@ -227,11 +223,9 @@ export default function ImageViewer({
 
   // internal state if controlled props not provided
   const [internalZoom, setInternalZoom] = useState(1);
-  const [internalPan, setInternalPan] = useState({ x: 0, y: 0 });
 
-  // effective scale & pan (prop takes precedence)
+  // effective scale (prop takes precedence)
   const scale = typeof propZoom === "number" ? propZoom : internalZoom;
-  const pan = propPan ?? internalPan;
 
   // workspace factor (Canva-style)
   const WORKSPACE_FACTOR = 5;
@@ -242,8 +236,7 @@ export default function ImageViewer({
   const [localAnnotations, setLocalAnnotations] = useState<ImageAnnotation[]>([]);
   const annotations = externalAnnotations ?? localAnnotations;
 
-  const [isPanning, setIsPanning] = useState(false);
-  const dragStart = useRef<{ x: number; y: number } | null>(null);
+
 
   // Modal state
   const [modalState, setModalState] = useState<{
@@ -256,86 +249,23 @@ export default function ImageViewer({
     mode: "create",
   });
 
-  /* --------------------------
-     Helper to update pan (clamped) and sync both internal & external
-     -------------------------- */
-  const clampAndSetPan = useCallback(
-    (rawX: number, rawY: number, s = scale) => {
-      const vw = viewport.w;
-      const vh = viewport.h;
-      const iw = imgNatural.w * s;
-      const ih = imgNatural.h * s;
 
-      let ox = rawX;
-      let oy = rawY;
-
-      if (iw <= vw) ox = (vw - iw) / 2;
-      else {
-        const minX = vw - iw;
-        const maxX = 0;
-        if (ox < minX) ox = minX;
-        if (ox > maxX) ox = maxX;
-      }
-
-      if (ih <= vh) oy = (vh - ih) / 2;
-      else {
-        const minY = vh - ih;
-        const maxY = 0;
-        if (oy < minY) oy = minY;
-        if (oy > maxY) oy = maxY;
-      }
-
-      // update both internal state and notify parent if present
-      setInternalPan({ x: ox, y: oy });
-      onPanChange?.({ x: ox, y: oy });
-      return { x: ox, y: oy };
-    },
-    [viewport, imgNatural, onPanChange, scale]
-  );
 
   /* --------------------------
-     Helper to update zoom and preserve focal point
+     Helper to update zoom
      -------------------------- */
   const setZoomAndSync = useCallback(
-    (newScale: number, center?: { x: number; y: number }) => {
+    (newScale: number) => {
       // clamp
       const MIN = Math.max(0.25, fitScale * 0.5);
       const MAX = Math.max(fitScale * 6, 4);
       newScale = Math.max(MIN, Math.min(MAX, newScale));
 
-      // compute new pan so that image pixel under center stays under cursor
-      let newPanX = pan.x;
-      let newPanY = pan.y;
-
-      const vw = viewport.w;
-      const vh = viewport.h;
-
-      if (center && outerRef.current) {
-        const rect = outerRef.current.getBoundingClientRect();
-        const cx = center.x - rect.left;
-        const cy = center.y - rect.top;
-
-        const imgXBefore = (cx - pan.x) / scale;
-        const imgYBefore = (cy - pan.y) / scale;
-
-        newPanX = cx - imgXBefore * newScale;
-        newPanY = cy - imgYBefore * newScale;
-      } else {
-        const cx = vw / 2;
-        const cy = vh / 2;
-        const imgXBefore = (cx - pan.x) / scale;
-        const imgYBefore = (cy - pan.y) / scale;
-        newPanX = cx - imgXBefore * newScale;
-        newPanY = cy - imgYBefore * newScale;
-      }
-
       // update both internal and external
       setInternalZoom(newScale);
       onZoomChange?.(newScale);
-
-      clampAndSetPan(newPanX, newPanY, newScale);
     },
-    [fitScale, viewport, pan, scale, onZoomChange, clampAndSetPan]
+    [fitScale, onZoomChange]
   );
 
   /* --------------------------
@@ -357,22 +287,18 @@ export default function ImageViewer({
       const s = Math.min(vw / img.naturalWidth, vh / img.naturalHeight);
       setFitScale(s);
 
-      const ox = (vw - img.naturalWidth * s) / 2;
-      const oy = (vh - img.naturalHeight * s) / 2;
-
       // sync both internal and external on init
       setInternalZoom(s);
       onZoomChange?.(s);
-      clampAndSetPan(ox, oy, s);
     };
 
     img.onerror = () => {
       // graceful fallback
     };
-  }, [documentUrl, onZoomChange, clampAndSetPan]);
+  }, [documentUrl, onZoomChange]);
 
   /* --------------------------
-     Resize observer: recalc fit scale & clamp pan
+     Resize observer: recalc fit scale
      -------------------------- */
   useEffect(() => {
     const outer = outerRef.current;
@@ -389,52 +315,26 @@ export default function ImageViewer({
       if (Math.abs(scale - fitScale) < 1e-6) {
         setInternalZoom(s);
         onZoomChange?.(s);
-        const ox = (vw - imgNatural.w * s) / 2;
-        const oy = (vh - imgNatural.h * s) / 2;
-        clampAndSetPan(ox, oy, s);
-      } else {
-        // clamp current pan to new bounds
-        clampAndSetPan(pan.x, pan.y, scale);
       }
     });
 
     ro.observe(outer);
     return () => ro.disconnect();
-  }, [imgNatural, scale, fitScale, pan, onZoomChange, clampAndSetPan]);
+  }, [imgNatural, scale, fitScale, onZoomChange]);
 
   /* --------------------------
-     Pan handlers
-     -------------------------- */
-  const onPointerDown = (e: React.PointerEvent) => {
-    setIsPanning(true);
-    dragStart.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
-    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-  };
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!isPanning || !dragStart.current) return;
-    const nx = e.clientX - dragStart.current.x;
-    const ny = e.clientY - dragStart.current.y;
-    clampAndSetPan(nx, ny); // uses current scale
-  };
-
-  const onPointerUp = () => {
-    setIsPanning(false);
-    dragStart.current = null;
-  };
-
-  /* --------------------------
-     Wheel zoom (smooth, focal-point based)
+     Wheel zoom
      -------------------------- */
   const onWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    
-    // Smoother zoom with smaller increments
-    const delta = -e.deltaY;
-    const factor = 1 + Math.sign(delta) * 0.1;
-    
-    // Zoom towards cursor position
-    setZoomAndSync(scale * factor, { x: e.clientX, y: e.clientY });
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      
+      // Smoother zoom with smaller increments
+      const delta = -e.deltaY;
+      const factor = 1 + Math.sign(delta) * 0.1;
+      
+      setZoomAndSync(scale * factor);
+    }
   };
 
   /* --------------------------
@@ -452,15 +352,10 @@ export default function ImageViewer({
 
   const resetView = useCallback(() => {
     console.log('Reset View clicked');
-    const vw = viewport.w;
-    const vh = viewport.h;
     const s = fitScale;
-    const ox = (vw - imgNatural.w * s) / 2;
-    const oy = (vh - imgNatural.h * s) / 2;
     setInternalZoom(s);
     onZoomChange?.(s);
-    clampAndSetPan(ox, oy, s);
-  }, [viewport, fitScale, imgNatural, onZoomChange, clampAndSetPan]);
+  }, [fitScale, onZoomChange]);
 
   /* --------------------------
      Keyboard shortcuts
@@ -503,13 +398,17 @@ export default function ImageViewer({
      Annotation helpers (client -> image px)
      -------------------------- */
   const clientToImage = (clientX: number, clientY: number) => {
-    if (!outerRef.current) return { x: 0, y: 0 };
-    const rect = outerRef.current.getBoundingClientRect();
-    const localX = clientX - rect.left;
-    const localY = clientY - rect.top;
+    if (!outerRef.current || !workspaceRef.current) return { x: 0, y: 0 };
+    const outerRect = outerRef.current.getBoundingClientRect();
+    const workspaceRect = workspaceRef.current.getBoundingClientRect();
+    
+    // Calculate position relative to the scaled image
+    const localX = clientX - workspaceRect.left;
+    const localY = clientY - workspaceRect.top;
+    
     return {
-      x: Math.round((localX - pan.x) / scale),
-      y: Math.round((localY - pan.y) / scale),
+      x: Math.round(localX / scale),
+      y: Math.round(localY / scale),
     };
   };
 
@@ -592,104 +491,28 @@ export default function ImageViewer({
      Render
      -------------------------- */
   return (
-    <div className={`relative w-full h-full flex flex-col ${className}`}>
-      {/* Toolbar */}
-      <div className="flex items-center justify-between p-3 bg-navy-800 border-b border-navy-700 text-off-white">
-        <div className="flex items-center gap-3">
-          <button 
-            type="button"
-            className="p-2 bg-navy-700 hover:bg-navy-600 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed" 
-            onClick={(e) => {
-              e.stopPropagation();
-              zoomOut();
-            }}
-            disabled={scale <= Math.max(0.25, fitScale * 0.5)}
-            title="Zoom Out (-)"
-          >
-            <ZoomOut className="w-5 h-5" />
-          </button>
-          
-          <div className="min-w-[80px] text-center">
-            <span className="text-sm font-medium">{Math.round(scale * 100)}%</span>
-          </div>
-          
-          <button 
-            type="button"
-            className="p-2 bg-navy-700 hover:bg-navy-600 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed" 
-            onClick={(e) => {
-              e.stopPropagation();
-              zoomIn();
-            }}
-            disabled={scale >= Math.max(fitScale * 6, 4)}
-            title="Zoom In (+)"
-          >
-            <ZoomIn className="w-5 h-5" />
-          </button>
-          
-          <div className="w-px h-6 bg-navy-600" />
-          
-          <button 
-            type="button"
-            className="p-2 bg-navy-700 hover:bg-navy-600 rounded transition-colors" 
-            onClick={(e) => {
-              e.stopPropagation();
-              resetView();
-            }}
-            title="Reset View (0)"
-          >
-            <RotateCcw className="w-5 h-5" />
-          </button>
-          
-          <button 
-            type="button"
-            className="p-2 bg-navy-700 hover:bg-navy-600 rounded transition-colors" 
-            onClick={(e) => {
-              e.stopPropagation();
-              resetView();
-            }}
-            title="Fit to Screen"
-          >
-            <Maximize2 className="w-5 h-5" />
-          </button>
-        </div>
-        
-        <div className="text-xs text-gray-400">
-          <span>Scroll to zoom • Double-click to annotate</span>
-        </div>
-      </div>
-
+    <div className={`relative w-full h-full ${className}`}>
       {/* OUTER VIEWPORT */}
       <div
         ref={outerRef}
-        className="flex-1 relative overflow-hidden bg-gray-700"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        className="w-full h-full relative overflow-auto bg-navy-800"
         onWheel={onWheel}
         onDoubleClick={onDoubleClick}
       >
-        {/* INNER WORKSPACE (invisible) */}
-        <div
-          ref={workspaceRef}
-          style={{
-            position: "absolute",
-            left: pan.x,
-            top: pan.y,
-            width: imgNatural.w * WORKSPACE_FACTOR,
-            height: imgNatural.h * WORKSPACE_FACTOR,
-            transform: `scale(${scale})`,
-            transformOrigin: "top left",
-            pointerEvents: "none",
-            transition: isPanning ? "none" : "transform 0.2s ease-out, left 0.2s ease-out, top 0.2s ease-out",
-          }}
-        >
-          {/* CENTERED IMAGE LAYER */}
+        {/* IMAGE CONTAINER WRAPPER */}
+        <div className="min-w-full min-h-full flex items-start justify-center p-4">
+          <div
+            ref={workspaceRef}
+            style={{
+              transform: `scale(${scale})`,
+              transformOrigin: "top center",
+              transition: "transform 0.1s ease-out",
+            }}
+          >
+          {/* IMAGE LAYER */}
           <div
             style={{
-              position: "absolute",
-              left: (imgNatural.w * WORKSPACE_FACTOR) / 2 - imgNatural.w / 2,
-              top: (imgNatural.h * WORKSPACE_FACTOR) / 2 - imgNatural.h / 2,
+              position: "relative",
               width: imgNatural.w,
               height: imgNatural.h,
             }}
@@ -699,7 +522,7 @@ export default function ImageViewer({
               src={documentUrl}
               alt="doc"
               draggable={false}
-              style={{ width: "100%", height: "100%", pointerEvents: "none", display: "block" }}
+              style={{ width: "100%", height: "100%", display: "block" }}
             />
 
             {/* PIXEL-LOCKED NOTES */}
@@ -732,6 +555,7 @@ export default function ImageViewer({
               </div>
             ))}
           </div>
+        </div>
         </div>
       </div>
 

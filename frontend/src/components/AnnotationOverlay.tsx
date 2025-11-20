@@ -1,7 +1,6 @@
 import React, { useRef, useCallback, useState } from 'react';
 import AnnotationMarker from './AnnotationMarker';
 import AnnotationInput from './AnnotationInput';
-import { EditAnnotationModal } from './EditAnnotationModal';
 import type { Annotation, DocumentAnnotation, ImageAnnotation } from '../contexts/AppContext';
 
 interface AnnotationOverlayProps {
@@ -16,8 +15,6 @@ interface AnnotationOverlayProps {
   panOffset?: { x: number; y: number }; // For images
   onAnnotationClick: (id: string) => void;
   onCreateAnnotation: (x: number, y: number, content: string) => void;
-  onUpdateAnnotation: (id: string, updates: { content: string; color?: string }) => void;
-  onDeleteAnnotation: (id: string) => void;
 }
 
 const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
@@ -31,9 +28,7 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
   scale = 1,
   panOffset = { x: 0, y: 0 },
   onAnnotationClick,
-  onCreateAnnotation,
-  onUpdateAnnotation,
-  onDeleteAnnotation
+  onCreateAnnotation
 }) => {
   const overlayRef = useRef<HTMLDivElement>(null);
   const [inputState, setInputState] = useState<{
@@ -43,7 +38,6 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
     storageX: number;
     storageY: number;
   } | null>(null);
-  const [selectedAnnotation, setSelectedAnnotation] = useState<Annotation | null>(null);
 
   // Type guard functions
   const isDocumentAnnotation = (annotation: Annotation): annotation is DocumentAnnotation => {
@@ -125,33 +119,8 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
 
   // Handle marker click
   const handleMarkerClick = useCallback((annotationId: string) => {
-    const annotation = annotations.find(a => a.id === annotationId);
-    if (annotation) {
-      setSelectedAnnotation(annotation);
-    }
     onAnnotationClick(annotationId);
-  }, [annotations, onAnnotationClick]);
-
-  // Handle edit modal save
-  const handleEditSave = useCallback((updates: { content: string; color?: string }) => {
-    if (selectedAnnotation) {
-      onUpdateAnnotation(selectedAnnotation.id, updates);
-      setSelectedAnnotation(null);
-    }
-  }, [selectedAnnotation, onUpdateAnnotation]);
-
-  // Handle edit modal delete
-  const handleEditDelete = useCallback(() => {
-    if (selectedAnnotation) {
-      onDeleteAnnotation(selectedAnnotation.id);
-      setSelectedAnnotation(null);
-    }
-  }, [selectedAnnotation, onDeleteAnnotation]);
-
-  // Handle edit modal close
-  const handleEditClose = useCallback(() => {
-    setSelectedAnnotation(null);
-  }, []);
+  }, [onAnnotationClick]);
 
   // Filter annotations by current page for PDF/DOCX documents
   const filteredAnnotations = (documentType === 'pdf' || documentType === 'docx')
@@ -198,17 +167,6 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
           y={inputState.screenY}
           onSave={handleInputSave}
           onCancel={handleInputCancel}
-        />
-      )}
-
-      {/* Edit annotation modal */}
-      {selectedAnnotation && (
-        <EditAnnotationModal
-          annotation={selectedAnnotation}
-          isOpen={true}
-          onClose={handleEditClose}
-          onSave={handleEditSave}
-          onDelete={handleEditDelete}
         />
       )}
     </>

@@ -46,16 +46,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             </div>
           </div>
         )}
-
-        {/* Offline indicator */}
-        {!state.isOnline && (
-          <div className="fixed bottom-4 left-4 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg z-40">
-            <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-red-300 rounded-full animate-pulse"></div>
-              <span className="text-sm font-medium">Offline</span>
-            </div>
-          </div>
-        )}
       </div>
     </ErrorBoundary>
   );

@@ -4,60 +4,22 @@ import { useAppContext } from '../contexts/AppContext';
 import { useAnnotations } from '../hooks/useAnnotations';
 import PDFViewer from './PDFViewer';
 import mammoth from 'mammoth';
-import { Eye, EyeOff, ZoomIn, ZoomOut, RotateCcw, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCcw, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 
 interface DocumentViewerProps {
   documentId: string;
   documentUrl: string;
   mimeType: string;
   filename: string;
+  onAnnotationClick?: (annotation: any) => void;
 }
-
-interface ViewerControlsProps {
-  isNotePanelOpen: boolean;
-  onToggleNotePanel: () => void;
-}
-
-const ViewerControls: React.FC<ViewerControlsProps> = ({
-  isNotePanelOpen,
-  onToggleNotePanel
-}) => {
-  return (
-    <motion.div 
-      className="absolute top-4 right-4 z-10"
-      initial={{ opacity: 0, scale: 0.8, y: -20 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: 0.5 }}
-    >
-      <motion.button
-        onClick={onToggleNotePanel}
-        className="p-2 rounded-lg bg-navy-900/80 backdrop-blur-sm text-off-white hover:bg-navy-800/80 border border-navy-700/50 shadow-lg"
-        title={isNotePanelOpen ? 'Hide Notes Panel' : 'Show Notes Panel'}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        transition={{ duration: 0.1 }}
-      >
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={isNotePanelOpen ? 'hide' : 'show'}
-            initial={{ opacity: 0, rotate: -90 }}
-            animate={{ opacity: 1, rotate: 0 }}
-            exit={{ opacity: 0, rotate: 90 }}
-            transition={{ duration: 0.2 }}
-          >
-            {isNotePanelOpen ? <EyeOff size={20} /> : <Eye size={20} />}
-          </motion.div>
-        </AnimatePresence>
-      </motion.button>
-    </motion.div>
-  );
-};
 
 const DocumentViewer: React.FC<DocumentViewerProps> = ({
   documentId,
   documentUrl,
   mimeType,
-  filename
+  filename,
+  onAnnotationClick
 }) => {
   const { state, dispatch } = useAppContext();
   const { viewerState, isNotePanelOpen } = state;
@@ -126,6 +88,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
       type: 'SET_VIEWER_STATE',
       payload: { 
         isLoading: false,
+        totalPages: totalPages || 0,
         // Reset to page 1 if this is a new document
         ...(totalPages && viewerState.currentPage > totalPages ? { currentPage: 1 } : {})
       }
@@ -158,9 +121,11 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
   }, [deleteAnnotation]);
 
   const handleAnnotationClick = useCallback((annotation: any) => {
-    // Handle annotation click - could open notes panel or focus annotation
-    console.log('Annotation clicked:', annotation);
-  }, []);
+    // Call the parent's annotation click handler
+    if (onAnnotationClick) {
+      onAnnotationClick(annotation);
+    }
+  }, [onAnnotationClick]);
 
   // Set loading state when document changes
   React.useEffect(() => {
@@ -639,12 +604,6 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
   return (
     <div className="relative h-full bg-navy-800">
-      {/* Viewer Controls */}
-      <ViewerControls
-        isNotePanelOpen={isNotePanelOpen}
-        onToggleNotePanel={handleToggleNotePanel}
-      />
-      
       {/* Document Viewer */}
       <div className="h-full">
         <AnimatePresence mode="wait">

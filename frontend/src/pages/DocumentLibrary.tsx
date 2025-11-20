@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { RefreshCw, Upload as UploadIcon, AlertCircle, CheckCircle } from 'lucide-react';
+import { RefreshCw, Upload as UploadIcon, AlertCircle, CheckCircle, Search, Grid, List } from 'lucide-react';
 import FileUpload from '../components/FileUpload';
 import DocumentList from '../components/DocumentList';
 import { useDocuments } from '../hooks/useDocuments';
 import { useAppContext } from '../contexts/AppContext';
 import type { DocumentMetadata } from '../contexts/AppContext';
+
+type ViewMode = 'grid' | 'list';
 
 const DocumentLibrary: React.FC = () => {
   const { state } = useAppContext();
@@ -16,6 +18,18 @@ const DocumentLibrary: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadingCount, setUploadingCount] = useState(0);
   const [uploadedCount, setUploadedCount] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCount, setSelectedCount] = useState(0);
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+
+  // Calculate filtered documents count
+  const filteredDocumentsCount = React.useMemo(() => {
+    if (!searchTerm) return documents.length;
+    return documents.filter(doc => {
+      const displayName = doc.originalFilename || doc.filename;
+      return displayName.toLowerCase().includes(searchTerm.toLowerCase());
+    }).length;
+  }, [documents, searchTerm]);
 
   const handleUploadSuccess = (document: DocumentMetadata) => {
     setUploadError(null);
@@ -87,20 +101,23 @@ const DocumentLibrary: React.FC = () => {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto min-h-full">
-      {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-off-white mb-2">
-              Document Library
-            </h1>
-            <p className="text-gray-300">
-              Upload and manage your documents for annotation
-            </p>
-          </div>
-          
-          <div className="flex items-center space-x-3">
+    <div className="h-full w-full flex flex-col bg-navy-900">
+      {/* Unified Toolbar */}
+      <div className="px-8 pt-6 pb-4 flex-shrink-0">
+        <div className="flex items-center justify-between mb-3">
+          {/* Left Side - Search Bar and Action Buttons */}
+          <div className="flex items-center gap-2 flex-1">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search documents..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-navy-800 border border-navy-600 rounded-lg text-off-white placeholder-gray-400 focus:outline-none focus:border-ocean-blue"
+              />
+            </div>
+
             {/* Refresh Button */}
             <button
               onClick={handleRefresh}
@@ -120,6 +137,47 @@ const DocumentLibrary: React.FC = () => {
               <span>{showUpload ? 'Hide Upload' : 'Upload Files'}</span>
             </button>
           </div>
+
+          {/* Right Side - View Mode Toggle */}
+          <div className="flex gap-1 bg-white/5 backdrop-blur-sm rounded-lg p-1 border border-white/10">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-2 rounded-md transition-all ${
+                viewMode === 'grid' 
+                  ? 'bg-white/10 text-ocean-400 shadow-sm' 
+                  : 'text-gray-400 hover:text-off-white hover:bg-white/5'
+              }`}
+              title="Grid view"
+            >
+              <Grid className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-2 rounded-md transition-all ${
+                viewMode === 'list' 
+                  ? 'bg-white/10 text-ocean-400 shadow-sm' 
+                  : 'text-gray-400 hover:text-off-white hover:bg-white/5'
+              }`}
+              title="List view"
+            >
+              <List className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Document Count Indicator */}
+        <div className="text-sm text-gray-400 px-1">
+          {selectedCount > 0 ? (
+            <span>
+              {selectedCount} of {filteredDocumentsCount} {filteredDocumentsCount === 1 ? 'document' : 'documents'} selected
+            </span>
+          ) : searchTerm ? (
+            <span>
+              {filteredDocumentsCount} of {documents.length} {documents.length === 1 ? 'document' : 'documents'}
+            </span>
+          ) : (
+            <span>{documents.length} {documents.length === 1 ? 'document' : 'documents'}</span>
+          )}
         </div>
 
         {/* Error Display */}
@@ -258,29 +316,22 @@ const DocumentLibrary: React.FC = () => {
         </div>
       )}
 
-      {/* Document List */}
-      <DocumentList
-        documents={documents}
-        onDocumentSelect={handleDocumentSelect}
-        onDocumentDelete={handleDocumentDelete}
-        onBulkDelete={handleBulkDelete}
-        isLoading={isLoading}
-      />
+      {/* Document List - flex-1 to fill remaining space, consistent padding */}
+      <div className="flex-1 px-8 overflow-y-auto min-h-0">
+        <DocumentList
+          documents={documents}
+          onDocumentSelect={handleDocumentSelect}
+          onDocumentDelete={handleDocumentDelete}
+          onBulkDelete={handleBulkDelete}
+          isLoading={isLoading}
+          searchTerm={searchTerm}
+          hideControls={true}
+          onSelectionChange={setSelectedCount}
+          viewMode={viewMode}
+        />
+      </div>
 
-      {/* Stats Footer */}
-      {documents.length > 0 && (
-        <div className="mt-8 p-4 bg-navy-800 rounded-lg border border-navy-700">
-          <div className="flex items-center justify-between text-sm text-gray-400">
-            <span>Total Documents: {documents.length}</span>
-            <span>
-              Total Size: {documents.reduce((total, doc) => total + doc.size, 0) > 0 
-                ? `${(documents.reduce((total, doc) => total + doc.size, 0) / (1024 * 1024)).toFixed(2)} MB`
-                : '0 MB'
-              }
-            </span>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw, Maximize2 } from 'lucide-react';
@@ -16,10 +16,8 @@ interface PDFViewerProps {
   documentId: string;
   currentPage: number;
   zoomScale: number;
-  panOffset: { x: number; y: number };
   onPageChange: (page: number) => void;
   onZoomChange: (scale: number) => void;
-  onPanChange: (offset: { x: number; y: number }) => void;
   onDocumentLoad?: (totalPages: number) => void;
   onAnnotationCreate?: (xPercent: number, yPercent: number, content: string) => void;
   onAnnotationUpdate?: (id: string, content: string) => void;
@@ -40,10 +38,8 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
   documentId,
   currentPage,
   zoomScale,
-  panOffset,
   onPageChange,
   onZoomChange,
-  onPanChange,
   onDocumentLoad,
   onAnnotationCreate,
   onAnnotationUpdate,
@@ -62,6 +58,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
   });
   const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
   const [documentDimensions, setDocumentDimensions] = useState({ width: 0, height: 0 });
+  const [baseDocumentSize, setBaseDocumentSize] = useState({ width: 0, height: 0 }); // Size at scale=1
 
   // Load PDF document
   useEffect(() => {
@@ -156,6 +153,10 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
 
       // Calculate viewport with zoom
       const viewport = page.getViewport({ scale: zoomScale });
+      
+      // Store base size (at scale=1) for fit calculations
+      const baseViewport = page.getViewport({ scale: 1 });
+      setBaseDocumentSize({ width: baseViewport.width, height: baseViewport.height });
 
       // Set canvas dimensions
       canvas.width = viewport.width;
@@ -221,42 +222,25 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
-  // Enable panning when zoomed in (not at default 1.0 scale)
-  const isPannable = zoomScale !== 1.0;
 
-  // Handle mouse wheel zoom with smooth animation
+
+  // Handle mouse wheel for zoom (Ctrl+scroll)
   const handleWheel = useCallback((event: React.WheelEvent) => {
+    // Ctrl/Cmd + scroll = zoom from center
     if (event.ctrlKey || event.metaKey) {
       event.preventDefault();
+      
       const delta = event.deltaY > 0 ? -0.1 : 0.1;
-      const newScale = Math.max(0.25, Math.min(3, zoomScale + delta));
+      const prevScale = zoomScale;
+      const newScale = Math.max(0.25, Math.min(3, prevScale + delta));
+      
+      if (newScale === prevScale) return;
+      
       onZoomChange(newScale);
     }
   }, [zoomScale, onZoomChange]);
 
-  // Handle mouse drag for panning (only when PDF is larger than container)
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
-  const handleMouseDown = useCallback((event: React.MouseEvent) => {
-    if (!isPannable) return;
-    setIsDragging(true);
-    setDragStart({ x: event.clientX - panOffset.x, y: event.clientY - panOffset.y });
-  }, [isPannable, panOffset]);
-
-  const handleMouseMove = useCallback((event: React.MouseEvent) => {
-    if (!isDragging || !isPannable) return;
-
-    const newOffset = {
-      x: event.clientX - dragStart.x,
-      y: event.clientY - dragStart.y
-    };
-    onPanChange(newOffset);
-  }, [isDragging, isPannable, dragStart, onPanChange]);
-
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
-  }, []);
 
   // Navigation functions
   const goToPreviousPage = () => {
@@ -273,213 +257,92 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
 
   const handleZoomIn = useCallback(() => {
     const newScale = Math.min(3, zoomScale + 0.25);
-    onZoomChange(newScale);
+    if (newScale !== zoomScale) {
+      onZoomChange(newScale);
+    }
   }, [zoomScale, onZoomChange]);
 
   const handleZoomOut = useCallback(() => {
     const newScale = Math.max(0.25, zoomScale - 0.25);
-    onZoomChange(newScale);
+    if (newScale !== zoomScale) {
+      onZoomChange(newScale);
+    }
   }, [zoomScale, onZoomChange]);
 
   const handleResetView = useCallback(() => {
     onZoomChange(1);
-    onPanChange({ x: 0, y: 0 });
-  }, [onZoomChange, onPanChange]);
+  }, [onZoomChange]);
 
-  // Calculate fit-to-screen scale
-  const handleFitToScreen = useCallback(async () => {
-    if (!state.pdfDocument || !containerRef.current) return;
-
-    try {
-      const page = await state.pdfDocument.getPage(currentPage);
-      const viewport = page.getViewport({ scale: 1 });
-      const container = containerRef.current;
-      
-      // Account for padding and margins
-      const padding = 40;
-      const availableWidth = container.offsetWidth - padding;
-      const availableHeight = container.offsetHeight - padding;
-      
-      // Calculate scale to fit both width and height
-      const scaleX = availableWidth / viewport.width;
-      const scaleY = availableHeight / viewport.height;
-      
-      // Use the smaller scale to ensure the entire page fits
-      const fitScale = Math.min(scaleX, scaleY, 3); // Cap at 3x zoom
-      
-      if (fitScale > 0) {
-        onZoomChange(fitScale);
-        onPanChange({ x: 0, y: 0 });
-      }
-    } catch (error) {
-      console.error('Error calculating fit-to-screen scale:', error);
+  // Fit to width - scales document to fit viewport width
+  const handleFitToWidth = useCallback(() => {
+    if (baseDocumentSize.width === 0 || !containerRef.current) return;
+    
+    const containerWidth = containerRef.current.offsetWidth;
+    const padding = 40;
+    const availableWidth = containerWidth - padding;
+    
+    const fitScale = Math.min(availableWidth / baseDocumentSize.width, 3);
+    
+    if (fitScale > 0) {
+      onZoomChange(fitScale);
     }
-  }, [state.pdfDocument, currentPage, onZoomChange, onPanChange]);
+  }, [baseDocumentSize, onZoomChange]);
+
+  // Fit to page - scales document to fit entire page in viewport
+  const handleFitToPage = useCallback(() => {
+    if (baseDocumentSize.width === 0 || baseDocumentSize.height === 0 || !containerRef.current) return;
+    
+    const containerWidth = containerRef.current.offsetWidth;
+    const containerHeight = containerRef.current.offsetHeight;
+    const padding = 40;
+    const availableWidth = containerWidth - padding;
+    const availableHeight = containerHeight - padding;
+    
+    const scaleX = availableWidth / baseDocumentSize.width;
+    const scaleY = availableHeight / baseDocumentSize.height;
+    
+    // Use the smaller scale to ensure entire page fits
+    const fitScale = Math.min(scaleX, scaleY, 3);
+    
+    if (fitScale > 0) {
+      onZoomChange(fitScale);
+    }
+  }, [baseDocumentSize, onZoomChange]);
+
+  // Legacy fit-to-screen (alias for fit-to-page)
+  const handleFitToScreen = handleFitToPage;
 
   if (state.isLoading) {
     return (
-      <motion.div
-        className="flex items-center justify-center h-full"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.2 }}
-      >
+      <div className="flex items-center justify-center h-full">
         <div className="text-center">
-          <motion.div
-            className="rounded-full h-12 w-12 border-b-2 border-ocean-blue mx-auto mb-4"
-            animate={{ rotate: 360 }}
-            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          />
-          <p className="text-off-white">Loading PDF...</p>
+          <div className="w-2 h-2 bg-ocean-blue rounded-full mx-auto mb-4 opacity-75" />
+          <p className="text-off-white text-sm">Loading PDF...</p>
         </div>
-      </motion.div>
+      </div>
     );
   }
 
   if (state.error) {
     return (
-      <motion.div
-        className="flex items-center justify-center h-full"
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.3 }}
-      >
+      <div className="flex items-center justify-center h-full">
         <div className="text-center text-red-400">
           <p className="text-lg font-semibold mb-2">Error</p>
           <p>{state.error}</p>
         </div>
-      </motion.div>
+      </div>
     );
   }
 
   return (
-    <motion.div
-      className="flex flex-col h-full"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3 }}
-    >
-      {/* Toolbar */}
-      <motion.div
-        className="bg-navy-900 border-b border-navy-700 p-3 flex items-center justify-between"
-        initial={{ y: -20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.3, delay: 0.1 }}
-      >
-        <div className="flex items-center space-x-2">
-          <motion.button
-            onClick={goToPreviousPage}
-            disabled={currentPage <= 1}
-            className="p-2 rounded bg-navy-800 text-off-white hover:bg-navy-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            transition={{ duration: 0.1 }}
-          >
-            <ChevronLeft size={16} />
-          </motion.button>
-
-          <motion.span
-            className="text-off-white text-sm px-3"
-            key={currentPage}
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            {currentPage} / {state.totalPages}
-          </motion.span>
-
-          <motion.button
-            onClick={goToNextPage}
-            disabled={currentPage >= state.totalPages}
-            className="p-2 rounded bg-navy-800 text-off-white hover:bg-navy-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            transition={{ duration: 0.1 }}
-          >
-            <ChevronRight size={16} />
-          </motion.button>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <motion.button
-            onClick={handleZoomOut}
-            className="p-2 rounded bg-navy-800 text-off-white hover:bg-navy-700"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            transition={{ duration: 0.1 }}
-          >
-            <ZoomOut size={16} />
-          </motion.button>
-
-          <motion.span
-            className="text-off-white text-sm px-3 min-w-[60px] text-center"
-            key={Math.round(zoomScale * 100)}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.2 }}
-          >
-            {Math.round(zoomScale * 100)}%
-          </motion.span>
-
-          <motion.button
-            onClick={handleZoomIn}
-            className="p-2 rounded bg-navy-800 text-off-white hover:bg-navy-700"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            transition={{ duration: 0.1 }}
-          >
-            <ZoomIn size={16} />
-          </motion.button>
-
-          <motion.button
-            onClick={handleFitToScreen}
-            className="p-2 rounded bg-navy-800 text-off-white hover:bg-navy-700"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            transition={{ duration: 0.1 }}
-            title="Fit to Screen"
-          >
-            <Maximize2 size={16} />
-          </motion.button>
-
-          <motion.button
-            onClick={handleResetView}
-            className="p-2 rounded bg-navy-800 text-off-white hover:bg-navy-700"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            transition={{ duration: 0.1 }}
-            title="Reset View (100%)"
-          >
-            <RotateCcw size={16} />
-          </motion.button>
-        </div>
-      </motion.div>
-
+    <div className="flex flex-col h-full">
       {/* Canvas container */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-hidden bg-navy-800 relative flex items-center justify-center"
+        className="flex-1 overflow-auto bg-navy-800 relative"
         onWheel={handleWheel}
-        style={{ cursor: isPannable ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
       >
-        <motion.div
-          className="relative"
-          animate={{
-            x: panOffset.x,
-            y: panOffset.y
-          }}
-          transition={{
-            type: "spring",
-            stiffness: 300,
-            damping: 30,
-            mass: 0.8
-          }}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-        >
+        <div className="inline-block min-w-full min-h-full flex items-start justify-center p-4">
           <canvas
             ref={canvasRef}
             className="shadow-lg border border-navy-600"
@@ -507,21 +370,11 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
                   onAnnotationCreate(x, y, content);
                 }
               }}
-              onUpdateAnnotation={(id, updates) => {
-                if (onAnnotationUpdate) {
-                  onAnnotationUpdate(id, updates.content);
-                }
-              }}
-              onDeleteAnnotation={(id) => {
-                if (onAnnotationDelete) {
-                  onAnnotationDelete(id);
-                }
-              }}
             />
           )}
-        </motion.div>
+        </div>
       </div>
-    </motion.div>
+    </div>
   );
 };
 

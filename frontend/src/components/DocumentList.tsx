@@ -23,6 +23,10 @@ export interface DocumentListProps {
   onDocumentDelete?: (documentId: string) => void;
   onBulkDelete?: (documentIds: string[]) => void;
   isLoading?: boolean;
+  searchTerm?: string;
+  hideControls?: boolean;
+  onSelectionChange?: (count: number) => void;
+  viewMode?: 'grid' | 'list';
 }
 
 type ViewMode = 'grid' | 'list';
@@ -33,7 +37,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({
   onDocumentSelect,
   onDocumentDelete,
   onBulkDelete,
-  isLoading = false
+  isLoading = false,
+  searchTerm: externalSearchTerm,
+  hideControls = false,
+  onSelectionChange,
+  viewMode: externalViewMode
 }) => {
 
   const navigate = useNavigate();
@@ -42,6 +50,19 @@ export const DocumentList: React.FC<DocumentListProps> = ({
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [selectedDocuments, setSelectedDocuments] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  // Use external search term if provided
+  const effectiveSearchTerm = externalSearchTerm !== undefined ? externalSearchTerm : searchTerm;
+  
+  // Use external view mode if provided
+  const effectiveViewMode = externalViewMode !== undefined ? externalViewMode : viewMode;
+
+  // Notify parent of selection changes
+  React.useEffect(() => {
+    if (onSelectionChange) {
+      onSelectionChange(selectedDocuments.size);
+    }
+  }, [selectedDocuments.size, onSelectionChange]);
 
   // Handle keyboard shortcuts
   React.useEffect(() => {
@@ -96,7 +117,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
   const filteredAndSortedDocuments = React.useMemo(() => {
     let filtered = documents.filter(doc => {
       const displayName = doc.originalFilename || doc.filename;
-      return displayName.toLowerCase().includes(searchTerm.toLowerCase());
+      return displayName.toLowerCase().includes(effectiveSearchTerm.toLowerCase());
     });
 
     filtered.sort((a, b) => {
@@ -117,7 +138,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
     });
 
     return filtered;
-  }, [documents, searchTerm, sortBy]);
+  }, [documents, effectiveSearchTerm, sortBy]);
 
   const handleDocumentClick = (document: DocumentMetadata) => {
     onDocumentSelect(document);
@@ -194,7 +215,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Search and Controls */}
+      {/* Search and Controls - Hidden when hideControls is true */}
+      {!hideControls && (
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -242,18 +264,21 @@ export const DocumentList: React.FC<DocumentListProps> = ({
           </div>
         </div>
       </div>
+      )}
 
-      {/* Document Count */}
+      {/* Document Count - Hidden when hideControls is true */}
+      {!hideControls && (
       <div className="text-sm text-gray-400">
         {filteredAndSortedDocuments.length} of {documents.length} documents
         {selectedDocuments.size > 0 && (
           <span className="ml-2 text-ocean-400 font-medium">({selectedDocuments.size} selected)</span>
         )}
       </div>
+      )}
 
-      {/* Documents Grid/List */}
-      {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {/* Documents Grid/List - Consistent spacing, 5 cards per row on laptop */}
+      {effectiveViewMode === 'grid' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
           {filteredAndSortedDocuments.map((document) => (
             <div
               key={document.id}
@@ -268,16 +293,20 @@ export const DocumentList: React.FC<DocumentListProps> = ({
               `}
             >
               {/* Selection Checkbox */}
-              <div className={`absolute top-2 left-2 z-10 p-1 rounded bg-navy-900/50 backdrop-blur-sm hover:bg-navy-900/70 transition-all ${
-                selectedDocuments.has(document.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-              }`}>
-                <input
-                  type="checkbox"
-                  checked={selectedDocuments.has(document.id)}
-                  onChange={(e) => toggleDocumentSelection(e, document.id)}
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-4 h-4 text-ocean-blue bg-navy-700 border-navy-600 rounded focus:ring-ocean-blue cursor-pointer accent-ocean-500"
-                />
+              <div 
+                className={`absolute top-2 left-2 z-10 cursor-pointer transition-all ${
+                  selectedDocuments.has(document.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleDocumentSelection(e, document.id);
+                }}
+              >
+                {selectedDocuments.has(document.id) ? (
+                  <CheckSquare strokeWidth={1} className="w-6 h-6 text-ocean-400 drop-shadow-lg" />
+                ) : (
+                  <Square strokeWidth={1} className="w-6 h-6 text-gray-400 hover:text-ocean-400 transition-colors" />
+                )}
               </div>
 
               {/* Delete Button */}
@@ -333,16 +362,20 @@ export const DocumentList: React.FC<DocumentListProps> = ({
             >
               <div className="flex items-center space-x-4 flex-1 min-w-0">
                 {/* Selection Checkbox */}
-                <div className={`p-1 rounded bg-navy-900/50 backdrop-blur-sm hover:bg-navy-900/70 transition-all ${
-                  selectedDocuments.has(document.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                }`}>
-                  <input
-                    type="checkbox"
-                    checked={selectedDocuments.has(document.id)}
-                    onChange={(e) => toggleDocumentSelection(e, document.id)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-4 h-4 text-ocean-blue bg-navy-700 border-navy-600 rounded focus:ring-ocean-blue cursor-pointer accent-ocean-500"
-                  />
+                <div 
+                  className={`cursor-pointer transition-all ${
+                    selectedDocuments.has(document.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleDocumentSelection(e, document.id);
+                  }}
+                >
+                  {selectedDocuments.has(document.id) ? (
+                    <CheckSquare className="w-6 h-6 text-ocean-400 drop-shadow-lg" />
+                  ) : (
+                    <Square className="w-6 h-6 text-gray-400 hover:text-ocean-400 transition-colors" />
+                  )}
                 </div>
 
                 {/* File Icon */}

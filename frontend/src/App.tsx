@@ -4,6 +4,7 @@ import { ToastProvider } from './components/ToastContainer';
 import Layout from './components/Layout';
 import DocumentLibrary from './pages/DocumentLibrary';
 import DocumentViewer from './pages/DocumentViewer';
+import AdvancedDocumentViewer from './pages/AdvancedDocumentViewer';
 import './index.css';
 
 function App() {
@@ -15,6 +16,7 @@ function App() {
             <Routes>
               <Route path="/" element={<DocumentLibrary />} />
               <Route path="/document/:documentId" element={<DocumentViewer />} />
+              <Route path="/viewer/:documentId" element={<AdvancedDocumentViewer />} />
             </Routes>
           </Layout>
         </Router>

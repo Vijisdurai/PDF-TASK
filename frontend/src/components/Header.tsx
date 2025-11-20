@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 
 const Header: React.FC = () => {
   const { state, dispatch } = useAppContext();
   const location = useLocation();
   const navigate = useNavigate();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isEditingZoom, setIsEditingZoom] = useState(false);
+  const [zoomInput, setZoomInput] = useState('');
 
   const isDocumentViewer = location.pathname.startsWith('/document/');
 
@@ -16,15 +18,168 @@ const Header: React.FC = () => {
     navigate('/');
   };
 
-  const toggleNotesPanel = () => {
-    dispatch({ type: 'TOGGLE_NOTE_PANEL' });
+  const handlePrevPage = () => {
+    if (state.viewerState.currentPage > 1) {
+      dispatch({ 
+        type: 'SET_VIEWER_STATE', 
+        payload: { currentPage: state.viewerState.currentPage - 1 } 
+      });
+    }
+  };
+
+  const handleNextPage = () => {
+    dispatch({ 
+      type: 'SET_VIEWER_STATE', 
+      payload: { currentPage: state.viewerState.currentPage + 1 } 
+    });
+  };
+
+  const handleZoomIn = () => {
+    const newScale = Math.min(3, state.viewerState.zoomScale + 0.25);
+    dispatch({ type: 'SET_VIEWER_STATE', payload: { zoomScale: newScale } });
+  };
+
+  const handleZoomOut = () => {
+    const newScale = Math.max(0.25, state.viewerState.zoomScale - 0.25);
+    dispatch({ type: 'SET_VIEWER_STATE', payload: { zoomScale: newScale } });
+  };
+
+  const handleFitToScreen = () => {
+    dispatch({ type: 'SET_VIEWER_STATE', payload: { zoomScale: 1, panOffset: { x: 0, y: 0 } } });
+  };
+
+  const handleZoomClick = () => {
+    setIsEditingZoom(true);
+    setZoomInput(Math.round(state.viewerState.zoomScale * 100).toString());
+  };
+
+  const handleZoomInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setZoomInput(e.target.value);
+  };
+
+  const handleZoomInputBlur = () => {
+    const value = parseInt(zoomInput);
+    if (!isNaN(value) && value >= 25 && value <= 300) {
+      dispatch({ type: 'SET_VIEWER_STATE', payload: { zoomScale: value / 100 } });
+    }
+    setIsEditingZoom(false);
+  };
+
+  const handleZoomInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleZoomInputBlur();
+    } else if (e.key === 'Escape') {
+      setIsEditingZoom(false);
+    }
   };
 
   return (
-    <header className="bg-navy-800 border-b border-navy-700 px-4 py-3">
-      <div className="flex items-center justify-between">
-        {/* Logo and title */}
-        <div className="flex items-center space-x-4">
+    <header 
+      className="bg-navy-800/80 backdrop-blur-md border-b border-white/10 px-4 py-3 transition-all"
+      style={{ marginRight: isDocumentViewer && state.isNotePanelOpen ? '320px' : '0' }}
+    >
+      {isDocumentViewer && state.currentDocument ? (
+        // Document viewer: simplified layout
+        <div className="flex items-center justify-between">
+          {/* Left: Back arrow + Filename */}
+          <div className="flex items-center space-x-3 flex-1">
+            <button
+              onClick={handleBackToLibrary}
+              className="p-2 bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all text-gray-300 hover:text-off-white border border-white/10 hover:border-white/20"
+              title="Back to Library"
+            >
+              <svg 
+                className="w-5 h-5" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth={2} 
+                  d="M15 19l-7-7 7-7" 
+                />
+              </svg>
+            </button>
+            <span className="text-off-white font-medium truncate">
+              {state.currentDocument.originalFilename || state.currentDocument.filename}
+            </span>
+          </div>
+
+          {/* Center: Page navigation - no container box */}
+          <div className="flex items-center space-x-3 flex-1 justify-center">
+            <button
+              onClick={handlePrevPage}
+              disabled={state.viewerState.currentPage <= 1}
+              className="p-2 bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all text-off-white disabled:opacity-30 disabled:cursor-not-allowed border border-white/10 hover:border-white/20"
+              title="Previous page"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <span className="text-off-white text-sm min-w-[60px] text-center font-medium">
+              {state.viewerState.currentPage} / {state.viewerState.totalPages || '?'}
+            </span>
+            <button
+              onClick={handleNextPage}
+              disabled={state.viewerState.totalPages && state.viewerState.currentPage >= state.viewerState.totalPages}
+              className="p-2 bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all text-off-white disabled:opacity-30 disabled:cursor-not-allowed border border-white/10 hover:border-white/20"
+              title="Next page"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
+
+          {/* Right: Zoom controls - glassmorphic */}
+          <div className="flex items-center space-x-2 flex-1 justify-end">
+            <button
+              onClick={handleZoomOut}
+              className="p-2 bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all text-off-white border border-white/10 hover:border-white/20"
+              title="Zoom out"
+            >
+              <ZoomOut size={18} />
+            </button>
+            
+            {isEditingZoom ? (
+              <input
+                type="text"
+                value={zoomInput}
+                onChange={handleZoomInputChange}
+                onBlur={handleZoomInputBlur}
+                onKeyDown={handleZoomInputKeyDown}
+                className="w-16 px-2 py-1.5 text-sm text-center bg-white/10 backdrop-blur-sm text-off-white rounded-lg border border-white/20 focus:outline-none focus:border-white/30 focus:bg-white/15"
+                autoFocus
+              />
+            ) : (
+              <button
+                onClick={handleZoomClick}
+                className="px-3 py-1.5 text-sm text-off-white bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all min-w-[50px] border border-white/10 hover:border-white/20"
+                title="Click to edit zoom"
+              >
+                {Math.round(state.viewerState.zoomScale * 100)}%
+              </button>
+            )}
+            
+            <button
+              onClick={handleZoomIn}
+              className="p-2 bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all text-off-white border border-white/10 hover:border-white/20"
+              title="Zoom in"
+            >
+              <ZoomIn size={18} />
+            </button>
+            
+            <button
+              onClick={handleFitToScreen}
+              className="p-2 bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all text-off-white border border-white/10 hover:border-white/20"
+              title="Fit to screen"
+            >
+              <Maximize2 size={18} />
+            </button>
+          </div>
+        </div>
+      ) : (
+        // Library view: show logo and title
+        <div className="flex items-center">
           <Link 
             to="/" 
             className="flex items-center space-x-2 text-off-white hover:text-ocean-400 transition-colors"
@@ -44,141 +199,8 @@ const Header: React.FC = () => {
                 />
               </svg>
             </div>
-            <span className="text-xl font-bold hidden sm:block">Library</span>
+            <span className="text-xl font-bold">Library</span>
           </Link>
-
-          {/* Breadcrumb navigation */}
-          {isDocumentViewer && state.currentDocument && (
-            <nav className="flex items-center space-x-2 text-sm">
-              <button
-                onClick={handleBackToLibrary}
-                className="text-gray-400 hover:text-ocean-400 transition-colors"
-              >
-                Library
-              </button>
-              <span className="text-gray-600">/</span>
-              <span className="text-off-white font-medium truncate max-w-xs">
-                {state.currentDocument.filename}
-              </span>
-            </nav>
-          )}
-        </div>
-
-        {/* Desktop navigation */}
-        <div className="hidden md:flex items-center space-x-4">
-          {/* Connection status */}
-          <div className="flex items-center space-x-2">
-            <div 
-              className={`w-2 h-2 rounded-full ${
-                state.isOnline ? 'bg-green-400' : 'bg-red-400'
-              }`}
-            />
-            <span className="text-sm text-gray-300">
-              {state.isOnline ? 'Online' : 'Offline'}
-            </span>
-          </div>
-
-          {/* Document viewer controls */}
-          {isDocumentViewer && (
-            <>
-              <div className="h-6 w-px bg-navy-600" />
-              
-              {/* Page info */}
-              <div className="text-sm text-gray-300">
-                Page {state.viewerState.currentPage}
-              </div>
-
-              {/* Zoom info */}
-              <div className="text-sm text-gray-300">
-                {Math.round(state.viewerState.zoomScale * 100)}%
-              </div>
-
-              {/* Notes panel toggle */}
-              <button
-                onClick={toggleNotesPanel}
-                className={`p-2 rounded-lg transition-colors ${
-                  state.isNotePanelOpen
-                    ? 'bg-ocean-500 text-white'
-                    : 'bg-navy-700 text-gray-300 hover:bg-navy-600'
-                }`}
-                title="Toggle notes panel"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round" 
-                    strokeWidth={2} 
-                    d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" 
-                  />
-                </svg>
-              </button>
-            </>
-          )}
-        </div>
-
-        {/* Mobile menu button */}
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="md:hidden p-2 rounded-lg bg-navy-700 text-gray-300 hover:bg-navy-600 transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path 
-              strokeLinecap="round" 
-              strokeLinejoin="round" 
-              strokeWidth={2} 
-              d={isMobileMenuOpen ? "M6 18L18 6M6 6l12 12" : "M4 6h16M4 12h16M4 18h16"} 
-            />
-          </svg>
-        </button>
-      </div>
-
-      {/* Mobile menu */}
-      {isMobileMenuOpen && (
-        <div className="md:hidden mt-4 pt-4 border-t border-navy-700">
-          <div className="flex flex-col space-y-3">
-            {/* Connection status */}
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-300">Status:</span>
-              <div className="flex items-center space-x-2">
-                <div 
-                  className={`w-2 h-2 rounded-full ${
-                    state.isOnline ? 'bg-green-400' : 'bg-red-400'
-                  }`}
-                />
-                <span className="text-sm text-gray-300">
-                  {state.isOnline ? 'Online' : 'Offline'}
-                </span>
-              </div>
-            </div>
-
-            {/* Document viewer mobile controls */}
-            {isDocumentViewer && (
-              <>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-300">Page:</span>
-                  <span className="text-sm text-off-white">{state.viewerState.currentPage}</span>
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-300">Zoom:</span>
-                  <span className="text-sm text-off-white">
-                    {Math.round(state.viewerState.zoomScale * 100)}%
-                  </span>
-                </div>
-
-                <button
-                  onClick={toggleNotesPanel}
-                  className={`w-full p-3 rounded-lg transition-colors text-left ${
-                    state.isNotePanelOpen
-                      ? 'bg-ocean-500 text-white'
-                      : 'bg-navy-700 text-gray-300'
-                  }`}
-                >
-                  {state.isNotePanelOpen ? 'Hide Notes Panel' : 'Show Notes Panel'}
-                </button>
-              </>
-            )}
-          </div>
         </div>
       )}
     </header>

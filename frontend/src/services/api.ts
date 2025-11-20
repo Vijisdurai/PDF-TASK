@@ -41,10 +41,17 @@ class ApiService {
           },
         };
       }
-      throw new Error(errorData.error.message);
+      throw new Error(errorData.error?.message || 'Request failed');
     }
 
-    return response.json();
+    // Handle empty responses (like DELETE operations)
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      return response.json();
+    }
+    
+    // Return empty object for non-JSON responses
+    return {} as T;
   }
 
   // Document operations

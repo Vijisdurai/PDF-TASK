@@ -42,6 +42,7 @@ export type Annotation = DocumentAnnotation | ImageAnnotation;
 
 export interface ViewerState {
   currentPage: number;
+  totalPages: number;
   zoomScale: number;
   panOffset: { x: number; y: number };
   isLoading: boolean;
@@ -88,11 +89,12 @@ const initialState: AppState = {
   annotations: [],
   viewerState: {
     currentPage: 1,
+    totalPages: 0,
     zoomScale: 1,
     panOffset: { x: 0, y: 0 },
     isLoading: false,
   },
-  isNotePanelOpen: true,
+  isNotePanelOpen: false,
   isUploading: false,
   isOnline: navigator.onLine,
 };

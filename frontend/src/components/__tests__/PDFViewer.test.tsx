@@ -54,12 +54,11 @@ vi.mock('lucide-react', () => ({
 describe('PDFViewer', () => {
   const defaultProps = {
     documentUrl: 'http://example.com/test.pdf',
+    documentId: 'test-doc-id',
     currentPage: 1,
     zoomScale: 1,
-    panOffset: { x: 0, y: 0 },
     onPageChange: vi.fn(),
     onZoomChange: vi.fn(),
-    onPanChange: vi.fn(),
     onDocumentLoad: vi.fn()
   };
 
@@ -261,7 +260,6 @@ describe('PDFViewer', () => {
       await user.click(resetButton!);
       
       expect(defaultProps.onZoomChange).toHaveBeenCalledWith(1);
-      expect(defaultProps.onPanChange).toHaveBeenCalledWith({ x: 0, y: 0 });
     });
 
     it('should handle mouse wheel zoom with ctrl key', async () => {
@@ -317,45 +315,14 @@ describe('PDFViewer', () => {
   });
 
   describe('Pan Functionality', () => {
-    it('should handle mouse drag for panning', async () => {
-      render(<PDFViewer {...defaultProps} />);
-      
-      // Wait for PDF to load
-      await waitFor(() => {
-        expect(screen.queryByText('Loading PDF...')).not.toBeInTheDocument();
-      });
-      
-      const container = document.querySelector('[style*="cursor"]');
-      
-      if (container) {
-        fireEvent.mouseDown(container, { clientX: 100, clientY: 100 });
-        fireEvent.mouseMove(container, { clientX: 150, clientY: 120 });
-        
-        expect(defaultProps.onPanChange).toHaveBeenCalledWith({ x: 50, y: 20 });
-        
-        fireEvent.mouseUp(container);
-      }
+    // Panning functionality has been removed - users can now use native browser scrolling
+    it.skip('should handle mouse drag for panning', async () => {
+      // Test skipped - panning removed in favor of native scrolling
     });
 
-    it('should change cursor during drag operation', async () => {
-      render(<PDFViewer {...defaultProps} />);
-      
-      // Wait for PDF to load
-      await waitFor(() => {
-        expect(screen.queryByText('Loading PDF...')).not.toBeInTheDocument();
-      });
-      
-      const container = document.querySelector('[style*="cursor"]');
-      
-      if (container) {
-        expect(container).toHaveStyle('cursor: grab');
-        
-        fireEvent.mouseDown(container, { clientX: 100, clientY: 100 });
-        expect(container).toHaveStyle('cursor: grabbing');
-        
-        fireEvent.mouseUp(container);
-        expect(container).toHaveStyle('cursor: grab');
-      }
+    // Panning functionality has been removed - users can now use native browser scrolling
+    it.skip('should change cursor during drag operation', async () => {
+      // Test skipped - panning removed in favor of native scrolling
     });
   });
 
@@ -490,25 +457,9 @@ describe('PDFViewer', () => {
       });
     });
 
-    it('should handle pan offset calculations during drag', async () => {
-      render(<PDFViewer {...defaultProps} />);
-      
-      // Wait for PDF to load
-      await waitFor(() => {
-        expect(screen.queryByText('Loading PDF...')).not.toBeInTheDocument();
-      });
-      
-      const container = document.querySelector('[style*="cursor"]');
-      
-      if (container) {
-        // Start drag at (100, 100)
-        fireEvent.mouseDown(container, { clientX: 100, clientY: 100 });
-        
-        // Move to (150, 120) - should calculate offset as (50, 20)
-        fireEvent.mouseMove(container, { clientX: 150, clientY: 120 });
-        
-        expect(defaultProps.onPanChange).toHaveBeenCalledWith({ x: 50, y: 20 });
-      }
+    // Panning functionality has been removed - users can now use native browser scrolling
+    it.skip('should handle pan offset calculations during drag', async () => {
+      // Test skipped - panning removed in favor of native scrolling
     });
 
     it('should handle wheel zoom coordinate calculations', async () => {

@@ -182,13 +182,11 @@ describe('PDFViewer Integration Tests', () => {
 
   test('reset view works properly', async () => {
     const mockOnZoomChange = jest.fn();
-    const mockOnPanChange = jest.fn();
 
     render(
       <PDFViewer 
         {...defaultProps} 
         onZoomChange={mockOnZoomChange}
-        onPanChange={mockOnPanChange}
       />
     );
 
@@ -200,7 +198,6 @@ describe('PDFViewer Integration Tests', () => {
     fireEvent.click(resetButton);
 
     expect(mockOnZoomChange).toHaveBeenCalledWith(1);
-    expect(mockOnPanChange).toHaveBeenCalledWith({ x: 0, y: 0 });
   });
 
   test('layout structure prevents toolbar overlay', async () => {
@@ -225,13 +222,11 @@ describe('PDFViewer Integration Tests', () => {
 
   test('handles keyboard shortcuts without errors', async () => {
     const mockOnZoomChange = jest.fn();
-    const mockOnPanChange = jest.fn();
 
     render(
       <PDFViewer 
         {...defaultProps} 
         onZoomChange={mockOnZoomChange}
-        onPanChange={mockOnPanChange}
       />
     );
 
@@ -244,13 +239,11 @@ describe('PDFViewer Integration Tests', () => {
     
     await waitFor(() => {
       expect(mockOnZoomChange).toHaveBeenCalled();
-      expect(mockOnPanChange).toHaveBeenCalledWith({ x: 0, y: 0 });
     });
 
     // Test Ctrl+0 (Reset View)
     fireEvent.keyDown(window, { key: '0', ctrlKey: true });
     
     expect(mockOnZoomChange).toHaveBeenCalledWith(1);
-    expect(mockOnPanChange).toHaveBeenCalledWith({ x: 0, y: 0 });
   });
 });

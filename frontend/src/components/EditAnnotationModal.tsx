@@ -21,7 +21,6 @@ export const EditAnnotationModal: React.FC<EditAnnotationModalProps> = ({
   const [color, setColor] = useState(
     annotation.type === 'image' ? annotation.color || '#000000' : '#000000'
   );
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   if (!isOpen) return null;
 
@@ -114,7 +113,7 @@ export const EditAnnotationModal: React.FC<EditAnnotationModalProps> = ({
                 id="annotation-content"
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none shadow-lg text-gray-900"
                 rows={6}
                 placeholder="Enter annotation content..."
               />
@@ -146,53 +145,20 @@ export const EditAnnotationModal: React.FC<EditAnnotationModalProps> = ({
           </div>
 
           {/* Modal footer */}
-          <div className="px-6 py-4 border-t border-gray-200 flex justify-between items-center">
-            {/* Delete button */}
-            <div>
-              {!showDeleteConfirm ? (
-                <button
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
-                >
-                  Delete
-                </button>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">
-                    Are you sure?
-                  </span>
-                  <button
-                    onClick={handleDelete}
-                    className="px-3 py-1 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded transition-colors"
-                  >
-                    Yes, Delete
-                  </button>
-                  <button
-                    onClick={() => setShowDeleteConfirm(false)}
-                    className="px-3 py-1 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Save and Cancel buttons */}
-            <div className="flex gap-2">
-              <button
-                onClick={handleCancel}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={!content.trim()}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-              >
-                Save
-              </button>
-            </div>
+          <div className="px-6 py-4 border-t border-gray-200 flex justify-end items-center gap-2">
+            <button
+              onClick={handleCancel}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={!content.trim()}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            >
+              Save
+            </button>
           </div>
         </div>
       </div>
