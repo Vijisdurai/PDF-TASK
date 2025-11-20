@@ -137,22 +137,17 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
   }, [dispatch]);
 
   // Annotation handlers
-  const handleAnnotationCreate = useCallback(async (annotation: {
-    xPercent: number;
-    yPercent: number;
-    page: number;
-    content: string;
-  }) => {
+  const handleAnnotationCreate = useCallback(async (xPercent: number, yPercent: number, content: string) => {
     const newAnnotation: Omit<import('../contexts/AppContext').DocumentAnnotation, 'id' | 'createdAt' | 'updatedAt'> = {
       type: 'document',
       documentId,
-      xPercent: annotation.xPercent,
-      yPercent: annotation.yPercent,
-      page: annotation.page,
-      content: annotation.content
+      xPercent,
+      yPercent,
+      page: viewerState.currentPage,
+      content
     };
     await createAnnotation(newAnnotation);
-  }, [createAnnotation, documentId]);
+  }, [createAnnotation, documentId, viewerState.currentPage]);
 
   const handleAnnotationUpdate = useCallback(async (id: string, content: string) => {
     await updateAnnotation(id, { content });
@@ -290,20 +285,9 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
             onAnnotationCreate={handleAnnotationCreate}
             onAnnotationUpdate={handleAnnotationUpdate}
             onAnnotationDelete={handleAnnotationDelete}
-            annotations={annotations
-              .filter((ann): ann is import('../contexts/AppContext').DocumentAnnotation => 
-                ann.type === 'document' && ann.page === viewerState.currentPage
-              )
-              .map(ann => ({
-                id: ann.id,
-                xPercent: ann.xPercent,
-                yPercent: ann.yPercent,
-                page: ann.page,
-                content: ann.content,
-                createdAt: ann.createdAt,
-                updatedAt: ann.updatedAt
-              }))
-            }
+            annotations={annotations.filter((ann): ann is import('../contexts/AppContext').DocumentAnnotation => 
+              ann.type === 'document'
+            )}
             onAnnotationClick={handleAnnotationClick}
           />
         );

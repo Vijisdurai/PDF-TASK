@@ -1,115 +1,86 @@
 import React from 'react';
-import { motion } from 'framer-motion';
 
 interface AnnotationMarkerProps {
-  id: string;
-  x: number; // Screen coordinate
-  y: number; // Screen coordinate
-  content?: string;
-  number?: number; // Annotation number (1, 2, 3, etc.)
-  isSelected?: boolean;
-  isHovered?: boolean;
-  onClick: (event: React.MouseEvent) => void;
-  onHover?: (isHovered: boolean) => void;
+  number: number;
+  color?: string; // Hex color code (default: #000000)
+  position: { x: number; y: number }; // Screen coordinates
+  onClick: () => void;
+  isHighlighted?: boolean;
 }
 
+/**
+ * Calculate the relative luminance of a color
+ * Based on WCAG 2.0 formula
+ */
+const calculateLuminance = (hexColor: string): number => {
+  // Remove # if present
+  const hex = hexColor.replace('#', '');
+  
+  // Parse RGB values
+  const r = parseInt(hex.substring(0, 2), 16) / 255;
+  const g = parseInt(hex.substring(2, 4), 16) / 255;
+  const b = parseInt(hex.substring(4, 6), 16) / 255;
+  
+  // Apply gamma correction
+  const rLinear = r <= 0.03928 ? r / 12.92 : Math.pow((r + 0.055) / 1.055, 2.4);
+  const gLinear = g <= 0.03928 ? g / 12.92 : Math.pow((g + 0.055) / 1.055, 2.4);
+  const bLinear = b <= 0.03928 ? b / 12.92 : Math.pow((b + 0.055) / 1.055, 2.4);
+  
+  // Calculate relative luminance
+  return 0.2126 * rLinear + 0.7152 * gLinear + 0.0722 * bLinear;
+};
+
+/**
+ * Determine if text should be black or white based on background color
+ */
+const getTextColor = (backgroundColor: string): string => {
+  // If background is white, use black text
+  if (backgroundColor.toUpperCase() === '#FFFFFF' || backgroundColor.toUpperCase() === '#FFF') {
+    return '#000000';
+  }
+  
+  // Calculate luminance and use black text for high luminance backgrounds
+  const luminance = calculateLuminance(backgroundColor);
+  return luminance > 0.9 ? '#000000' : '#FFFFFF';
+};
+
 const AnnotationMarker: React.FC<AnnotationMarkerProps> = ({
-  id,
-  x,
-  y,
-  content,
   number,
-  isSelected = false,
-  isHovered = false,
+  color = '#000000',
+  position,
   onClick,
-  onHover
+  isHighlighted = false
 }) => {
+  const textColor = getTextColor(color);
+  
   return (
-    <motion.div
-      className="absolute pointer-events-auto"
+    <div
+      className="absolute cursor-pointer transition-transform duration-200 hover:scale-110"
       style={{
-        left: x - 12, // Center the 24px marker
-        top: y - 12,
-        transform: 'translate(0, 0)', // Prevent transform interference
-        zIndex: isSelected ? 20 : 10 // Selected markers appear on top
+        left: position.x - 12, // Center the 24px marker
+        top: position.y - 12,
+        width: '24px',
+        height: '24px',
+        zIndex: isHighlighted ? 20 : 10
       }}
-      initial={{ scale: 0, opacity: 0 }}
-      animate={{ 
-        scale: isSelected ? 1.3 : isHovered ? 1.2 : 1, 
-        opacity: 1 
-      }}
-      exit={{ scale: 0, opacity: 0 }}
-      transition={{
-        type: "spring",
-        stiffness: 400,
-        damping: 25,
-        duration: 0.3
-      }}
-      whileHover={{ scale: isSelected ? 1.4 : 1.2 }}
-      whileTap={{ scale: 0.9 }}
-      onMouseEnter={() => onHover?.(true)}
-      onMouseLeave={() => onHover?.(false)}
+      onClick={onClick}
     >
-      {/* Outer ring for selected state */}
-      {isSelected && (
-        <motion.div
-          className="absolute inset-0 w-6 h-6 -m-1 border-2 border-ocean-blue rounded-full"
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: 1, opacity: 0.6 }}
-          exit={{ scale: 0, opacity: 0 }}
-          transition={{ duration: 0.2 }}
-        />
-      )}
-      
-      {/* Main marker */}
       <div
-        className={`
-          w-6 h-6 rounded-full shadow-lg cursor-pointer transition-all duration-200 flex items-center justify-center
-          ${isSelected 
-            ? 'bg-ocean-500 border-2 border-off-white ring-2 ring-ocean-blue/30' 
-            : 'bg-ocean-500 border-2 border-off-white hover:bg-ocean-400'
-          }
-        `}
-        onClick={onClick}
-        title={content || 'Click to view annotation'}
+        className="w-full h-full rounded-full flex items-center justify-center shadow-md"
+        style={{
+          backgroundColor: color,
+          transform: isHighlighted ? 'scale(1.2)' : 'scale(1)',
+          transition: 'transform 0.2s ease-in-out'
+        }}
       >
-        {/* Number display */}
-        {number !== undefined && (
-          <span className="text-white text-xs font-bold leading-none select-none">
-            {number}
-          </span>
-        )}
-        
-        {/* Pulse animation for new markers */}
-        <motion.div
-          className="absolute inset-0 w-6 h-6 bg-ocean-500 rounded-full -z-10"
-          initial={{ scale: 1, opacity: 0.8 }}
-          animate={{ scale: 2, opacity: 0 }}
-          transition={{ 
-            duration: 1.5, 
-            repeat: 2,
-            ease: "easeOut"
-          }}
-        />
-      </div>
-      
-      {/* Hover tooltip */}
-      {isHovered && content && (
-        <motion.div
-          className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 pointer-events-none"
-          initial={{ opacity: 0, y: 10, scale: 0.8 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 10, scale: 0.8 }}
-          transition={{ duration: 0.2 }}
+        <span
+          className="text-xs font-bold select-none"
+          style={{ color: textColor }}
         >
-          <div className="bg-navy-900/95 backdrop-blur-sm text-off-white text-xs px-2 py-1 rounded border border-navy-700 shadow-lg max-w-48">
-            <div className="truncate">{content}</div>
-            {/* Tooltip arrow */}
-            <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-2 border-r-2 border-t-2 border-transparent border-t-navy-700" />
-          </div>
-        </motion.div>
-      )}
-    </motion.div>
+          {number}
+        </span>
+      </div>
+    </div>
   );
 };
 

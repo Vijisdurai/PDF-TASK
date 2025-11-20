@@ -2,13 +2,18 @@
 
 ## Overview
 
-This design extends the existing annotation system to support both PDF/Word document annotations and image annotations with enhanced zoom capabilities. The system already has a foundation with:
+This design implements a unified annotation system that works consistently across PDF, DOCX, and image files. The system provides:
 
-- **Backend**: SQLAlchemy models for documents and annotations with percentage-based coordinates
-- **Frontend**: React ImageViewer component with zoom/pan capabilities and basic annotation support
+- **Unified Marker System**: Circular markers (22-26px) with numbered labels and adaptive color contrast
+- **Consistent Behavior**: Identical annotation logic across all document types with position anchoring during zoom/pan
+- **Clean UI**: Sidebar with human-readable timestamps and no coordinate display
+- **Complete CRUD**: Full create, edit, delete operations with color customization
+- **Production-Ready**: No placeholders, complete implementations, deterministic logic
+
+The system builds on existing infrastructure:
+- **Backend**: SQLAlchemy models for documents and annotations
+- **Frontend**: React components with TypeScript
 - **Storage**: IndexedDB (Dexie) for offline-first architecture with sync capabilities
-
-The design will enhance the existing annotation model to support both document page-based and image pixel-based coordinates, add zoom controls to the ImageViewer, and extend the annotation UI to support color customization.
 
 ## Architecture
 
@@ -148,40 +153,84 @@ The existing `ImageViewer` component already has zoom functionality. Enhancement
 
 **No major changes needed** - the ImageViewer already meets requirements.
 
-### 3. Annotation Manager Component
+### 3. Annotation Marker Component
 
-New component to handle annotation creation, editing, and display:
+Reusable component for rendering circular annotation markers:
 
 ```typescript
-interface AnnotationManagerProps {
-  documentId: string;
-  documentType: 'pdf' | 'word' | 'image';
-  currentPage?: number;  // For PDF/Word
-  imageNaturalSize?: { width: number; height: number };  // For images
+interface AnnotationMarkerProps {
+  number: number;
+  color: string;  // Hex color code
+  position: { x: number; y: number };  // Screen coordinates
+  onClick: () => void;
+  isHighlighted?: boolean;
+}
+```
+
+**Marker Styling Rules**:
+- Circle shape with 24px diameter (22-26px range)
+- Background color from annotation.color (default: #000000)
+- Inner number color: white for dark backgrounds, black for white/light backgrounds
+- Automatic contrast calculation: if background is #FFFFFF or luminance > 0.9, use black text
+- CSS: `border-radius: 50%`, `display: flex`, `align-items: center`, `justify-content: center`
+- Font: bold, 12-14px
+- Cursor: pointer
+- Hover state: slight scale transform (1.1x)
+
+### 4. Annotation Overlay Component
+
+Component that renders all annotation markers on top of the document/image:
+
+```typescript
+interface AnnotationOverlayProps {
   annotations: Annotation[];
-  onAnnotationCreate: (annotation: Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  onAnnotationUpdate: (id: string, updates: Partial<Annotation>) => void;
-  onAnnotationDelete: (id: string) => void;
+  documentType: 'pdf' | 'docx' | 'image';
+  currentPage?: number;  // For PDF/DOCX
+  containerRef: React.RefObject<HTMLElement>;
+  scale?: number;  // For images
+  onAnnotationClick: (id: string) => void;
+  onCreateAnnotation: (x: number, y: number) => void;
 }
 ```
 
 **Key Responsibilities**:
-- Coordinate transformation between screen coordinates and storage coordinates
-- Annotation UI rendering (markers, tooltips, edit dialogs)
-- Color picker for image annotations
-- Validation of annotation positions
+- Render markers at correct positions using coordinate transformation
+- Handle double-click events for annotation creation
+- Filter annotations by page for PDF/DOCX
+- Apply scale transforms for image annotations
+- Manage marker numbering (sequential based on creation order)
 
-### 4. PDF/Word Viewer Component
+### 5. Annotations Sidebar Component
 
-New component for displaying PDF and Word documents with page-based annotations:
+Sidebar component displaying all annotations with metadata:
+
+```typescript
+interface AnnotationsSidebarProps {
+  annotations: Annotation[];
+  documentType: 'pdf' | 'docx' | 'image';
+  onAnnotationClick: (id: string) => void;
+  onAnnotationEdit: (id: string) => void;
+  onAnnotationDelete: (id: string) => void;
+}
+```
+
+**Display Requirements**:
+- Group by page for PDF documents
+- Show creator name (from annotation.createdBy or default "User")
+- Show formatted timestamp: `format(new Date(annotation.createdAt), "MMM dd, yyyy – h:mm a")`
+- Show annotation content text
+- NO coordinate display
+- Click handler to focus marker on document
+- Edit/delete buttons for each annotation
+
+### 6. PDF Viewer Component
+
+Component for displaying PDF documents with page-based annotations:
 
 ```typescript
 interface PDFViewerProps {
   documentUrl: string;
   documentId: string;
-  currentPage: number;
-  totalPages: number;
-  onPageChange: (page: number) => void;
   annotations: DocumentAnnotation[];
   onAnnotationCreate: (annotation: Omit<DocumentAnnotation, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onAnnotationUpdate: (id: string, updates: Partial<DocumentAnnotation>) => void;
@@ -189,13 +238,109 @@ interface PDFViewerProps {
 }
 ```
 
-**Implementation Approach**:
-- Use existing converted images from backend (documents are already converted to images)
-- Display one page at a time
-- Convert click coordinates to percentage-based coordinates
-- Store page number with each annotation
+**Implementation Requirements**:
+- Use PDF.js for rendering (existing library)
+- Map coordinates to pdfRenderedViewport coordinate system
+- Handle multi-page navigation (existing controls - DO NOT MODIFY)
+- Filter annotations by current page
+- Convert double-click coordinates to percentage-based storage
+- Maintain marker positions during zoom (existing zoom controls - DO NOT MODIFY)
 
-### 5. Annotation API Endpoints
+### 7. DOCX Viewer Component
+
+Component for displaying DOCX documents with annotations:
+
+```typescript
+interface DocxViewerProps {
+  documentUrl: string;
+  documentId: string;
+  annotations: DocumentAnnotation[];
+  onAnnotationCreate: (annotation: Omit<DocumentAnnotation, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onAnnotationUpdate: (id: string, updates: Partial<DocumentAnnotation>) => void;
+  onAnnotationDelete: (id: string) => void;
+}
+```
+
+**Implementation Requirements**:
+- DOCX rendered as HTML or canvas (existing rendering - DO NOT MODIFY)
+- Use rendered container's bounding box for coordinate mapping
+- Annotations locked during scroll (viewer scrolls rather than zooms)
+- Convert double-click coordinates to percentage-based storage
+- Same annotation logic as PDF viewer
+
+### 8. Coordinate Transformation Hooks
+
+Custom hooks for coordinate mapping:
+
+```typescript
+// useCoordinateMapper.ts
+interface CoordinateMapper {
+  screenToStorage: (screenX: number, screenY: number) => StorageCoords;
+  storageToScreen: (storageCoords: StorageCoords) => ScreenCoords;
+}
+
+function useCoordinateMapper(
+  documentType: 'pdf' | 'docx' | 'image',
+  containerRef: React.RefObject<HTMLElement>,
+  scale?: number,
+  naturalSize?: { width: number; height: number }
+): CoordinateMapper;
+```
+
+**Transformation Logic**:
+
+For PDF/DOCX (percentage-based):
+```typescript
+screenToStorage: (x, y) => ({
+  xPercent: (x / containerWidth) * 100,
+  yPercent: (y / containerHeight) * 100
+})
+
+storageToScreen: ({ xPercent, yPercent }) => ({
+  x: (xPercent / 100) * containerWidth,
+  y: (yPercent / 100) * containerHeight
+})
+```
+
+For Images (pixel-based with scale):
+```typescript
+screenToStorage: (x, y) => ({
+  xPixel: (x - panX) / scale,
+  yPixel: (y - panY) / scale
+})
+
+storageToScreen: ({ xPixel, yPixel }) => ({
+  x: xPixel * scale + panX,
+  y: yPixel * scale + panY
+})
+```
+
+### 9. Annotation State Management Hook
+
+Custom hook for managing annotation CRUD operations:
+
+```typescript
+// useAnnotations.ts
+interface UseAnnotationsReturn {
+  annotations: Annotation[];
+  createAnnotation: (data: CreateAnnotationData) => Promise<void>;
+  updateAnnotation: (id: string, updates: Partial<Annotation>) => Promise<void>;
+  deleteAnnotation: (id: string) => Promise<void>;
+  isLoading: boolean;
+  error: Error | null;
+}
+
+function useAnnotations(documentId: string): UseAnnotationsReturn;
+```
+
+**Responsibilities**:
+- Fetch annotations on mount
+- Optimistic UI updates
+- Sync with backend
+- Handle offline mode with IndexedDB
+- Error handling and retry logic
+
+### 10. Annotation API Endpoints
 
 Extend existing annotation API with new endpoints:
 
@@ -208,7 +353,31 @@ DELETE /api/annotations/{id}               - Delete annotation
 POST   /api/annotations/bulk               - Bulk create annotations
 ```
 
-### 6. IndexedDB Schema Extension
+### 11. Edit Annotation Modal Component
+
+Modal dialog for editing annotation content and color:
+
+```typescript
+interface EditAnnotationModalProps {
+  annotation: Annotation;
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (updates: { content: string; color: string }) => void;
+  onDelete: () => void;
+}
+```
+
+**UI Requirements**:
+- Text area for content editing
+- Color picker for marker color selection
+- Show formatted timestamp (read-only)
+- Show creator name (read-only)
+- Save button
+- Delete button with confirmation
+- Cancel button
+- Modal overlay with backdrop
+
+### 12. IndexedDB Schema Extension
 
 Extend the existing Dexie schema to support new annotation fields:
 
@@ -221,6 +390,12 @@ this.version(2).stores({
   return tx.table('annotations').toCollection().modify(annotation => {
     if (!annotation.type) {
       annotation.type = 'document';  // Default existing annotations to document type
+    }
+    if (!annotation.color) {
+      annotation.color = '#000000';  // Default to black
+    }
+    if (!annotation.createdBy) {
+      annotation.createdBy = 'User';  // Default creator
     }
   });
 });

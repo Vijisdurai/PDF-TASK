@@ -3,22 +3,13 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw, Maximize2 } from 'lucide-react';
 import AnnotationOverlay from './AnnotationOverlay';
+import type { Annotation } from '../contexts/AppContext';
 
 // Set up PDF.js worker with proper URL
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.js',
   import.meta.url
 ).toString();
-
-interface AnnotationPoint {
-  id: string;
-  xPercent: number; // Percentage-based coordinate (0-100)
-  yPercent: number; // Percentage-based coordinate (0-100)
-  page: number; // Page number (1-based)
-  content: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
 
 interface PDFViewerProps {
   documentUrl: string;
@@ -30,11 +21,11 @@ interface PDFViewerProps {
   onZoomChange: (scale: number) => void;
   onPanChange: (offset: { x: number; y: number }) => void;
   onDocumentLoad?: (totalPages: number) => void;
-  onAnnotationCreate?: (annotation: Omit<AnnotationPoint, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onAnnotationCreate?: (xPercent: number, yPercent: number, content: string) => void;
   onAnnotationUpdate?: (id: string, content: string) => void;
   onAnnotationDelete?: (id: string) => void;
-  annotations?: AnnotationPoint[];
-  onAnnotationClick?: (annotation: AnnotationPoint) => void;
+  annotations?: Annotation[];
+  onAnnotationClick?: (annotation: Annotation) => void;
 }
 
 interface PDFViewerState {
@@ -496,21 +487,26 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
           />
 
           {/* Annotation Overlay */}
-          {onAnnotationCreate && onAnnotationUpdate && onAnnotationDelete && documentDimensions.width > 0 && (
+          {onAnnotationCreate && documentDimensions.width > 0 && (
             <AnnotationOverlay
-              documentId={documentId}
+              annotations={annotations}
+              documentType="pdf"
               currentPage={currentPage}
-              zoomScale={zoomScale}
-              panOffset={panOffset}
               containerWidth={containerDimensions.width}
               containerHeight={containerDimensions.height}
               documentWidth={documentDimensions.width}
               documentHeight={documentDimensions.height}
-              onAnnotationCreate={onAnnotationCreate}
-              onAnnotationUpdate={onAnnotationUpdate}
-              onAnnotationDelete={onAnnotationDelete}
-              annotations={annotations}
-              onAnnotationClick={onAnnotationClick}
+              onAnnotationClick={(id) => {
+                const annotation = annotations.find(a => a.id === id);
+                if (annotation && onAnnotationClick) {
+                  onAnnotationClick(annotation);
+                }
+              }}
+              onCreateAnnotation={(x, y, content) => {
+                if (onAnnotationCreate) {
+                  onAnnotationCreate(x, y, content);
+                }
+              }}
             />
           )}
         </motion.div>
