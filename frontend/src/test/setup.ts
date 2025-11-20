@@ -44,29 +44,41 @@ vi.mock('dexie', () => {
     update: vi.fn(() => Promise.resolve()),
     delete: vi.fn(() => Promise.resolve()),
     clear: vi.fn(() => Promise.resolve()),
+    get: vi.fn(() => Promise.resolve(undefined)),
+    count: vi.fn(() => Promise.resolve(0)),
     where: vi.fn(() => ({
       equals: vi.fn(() => ({
         toArray: vi.fn(() => Promise.resolve([])),
-        delete: vi.fn(() => Promise.resolve())
+        delete: vi.fn(() => Promise.resolve()),
+        count: vi.fn(() => Promise.resolve(0))
       }))
     })),
     orderBy: vi.fn(() => ({
       reverse: vi.fn(() => ({
         toArray: vi.fn(() => Promise.resolve([]))
       }))
+    })),
+    toCollection: vi.fn(() => ({
+      modify: vi.fn(() => Promise.resolve())
     }))
   };
 
+  const DexieClass = vi.fn(function(this: any) {
+    this.version = vi.fn(() => ({
+      stores: vi.fn(() => ({
+        upgrade: vi.fn()
+      }))
+    }));
+    this.open = vi.fn(() => Promise.resolve());
+    this.documents = mockTable;
+    this.annotations = mockTable;
+    this.transaction = vi.fn((mode, tables, callback) => Promise.resolve(callback()));
+    return this;
+  });
+
   return {
-    Dexie: vi.fn(() => ({
-      version: vi.fn(() => ({
-        stores: vi.fn()
-      })),
-      open: vi.fn(() => Promise.resolve()),
-      documents: mockTable,
-      annotations: mockTable,
-      transaction: vi.fn((mode, tables, callback) => Promise.resolve(callback()))
-    })),
+    default: DexieClass,
+    Dexie: DexieClass,
     Table: vi.fn()
   };
 });

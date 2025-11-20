@@ -507,6 +507,16 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
                   onAnnotationCreate(x, y, content);
                 }
               }}
+              onUpdateAnnotation={(id, updates) => {
+                if (onAnnotationUpdate) {
+                  onAnnotationUpdate(id, updates.content);
+                }
+              }}
+              onDeleteAnnotation={(id) => {
+                if (onAnnotationDelete) {
+                  onAnnotationDelete(id);
+                }
+              }}
             />
           )}
         </motion.div>

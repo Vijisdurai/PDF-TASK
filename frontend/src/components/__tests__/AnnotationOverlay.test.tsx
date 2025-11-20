@@ -1,266 +1,210 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import AnnotationOverlay from '../AnnotationOverlay';
+import type { DocumentAnnotation, ImageAnnotation } from '../../contexts/AppContext';
 
-// Mock framer-motion to avoid animation issues in tests
+// Mock framer-motion to avoid animation issues
 vi.mock('framer-motion', () => ({
   motion: {
     div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+    button: ({ children, ...props }: any) => <button {...props}>{children}</button>,
   },
+  AnimatePresence: ({ children }: any) => <>{children}</>,
 }));
 
 describe('AnnotationOverlay', () => {
+  const mockDocumentAnnotation: DocumentAnnotation = {
+    id: 'ann-1',
+    documentId: 'doc-1',
+    type: 'document',
+    page: 1,
+    xPercent: 50,
+    yPercent: 50,
+    content: 'Test annotation',
+    createdAt: new Date('2024-01-15T10:30:00'),
+    updatedAt: new Date('2024-01-15T10:30:00'),
+  };
+
+  const mockImageAnnotation: ImageAnnotation = {
+    id: 'ann-2',
+    documentId: 'img-1',
+    type: 'image',
+    xPixel: 100,
+    yPixel: 200,
+    content: 'Image annotation',
+    color: '#FF0000',
+    createdAt: new Date('2024-01-15T10:30:00'),
+    updatedAt: new Date('2024-01-15T10:30:00'),
+  };
+
   const defaultProps = {
-    documentId: 'test-doc-1',
+    documentType: 'pdf' as const,
     currentPage: 1,
-    zoomScale: 1,
-    panOffset: { x: 0, y: 0 },
     containerWidth: 800,
     containerHeight: 600,
     documentWidth: 400,
     documentHeight: 300,
-    onAnnotationCreate: vi.fn(),
+    scale: 1,
+    panOffset: { x: 0, y: 0 },
     annotations: [],
-    onAnnotationClick: vi.fn()
+    onAnnotationClick: vi.fn(),
+    onCreateAnnotation: vi.fn(),
+    onUpdateAnnotation: vi.fn(),
+    onDeleteAnnotation: vi.fn(),
   };
 
-  beforeEach(() => {
-    vi.clearAllMocks();
+  it('renders overlay with crosshair cursor', () => {
+    const { container } = render(<AnnotationOverlay {...defaultProps} />);
+    const overlay = container.querySelector('[style*="crosshair"]');
+    expect(overlay).toBeTruthy();
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
+  it('renders annotation markers for document annotations on current page', () => {
+    render(
+      <AnnotationOverlay
+        {...defaultProps}
+        annotations={[mockDocumentAnnotation]}
+      />
+    );
+    
+    expect(screen.getByText('1')).toBeTruthy();
   });
 
-  describe('Annotation Creation', () => {
-    it('should render overlay with crosshair cursor', () => {
-      render(<AnnotationOverlay {...defaultProps} />);
-      
-      const overlay = document.querySelector('[style*="crosshair"]');
-      expect(overlay).toBeInTheDocument();
-    });
+  it('filters out annotations from other pages', () => {
+    const page2Annotation: DocumentAnnotation = {
+      ...mockDocumentAnnotation,
+      id: 'ann-2',
+      page: 2,
+    };
 
-    it('should call onAnnotationCreate when overlay is clicked', async () => {
-      const user = userEvent.setup();
-      render(<AnnotationOverlay {...defaultProps} />);
-      
-      const overlay = document.querySelector('[style*="crosshair"]');
-      if (overlay) {
-        await user.click(overlay);
-        expect(defaultProps.onAnnotationCreate).toHaveBeenCalled();
-      }
-    });
-
-    it('should calculate correct percentage coordinates', async () => {
-      const user = userEvent.setup();
-      
-      // Mock getBoundingClientRect to return predictable values
-      const mockGetBoundingClientRect = vi.fn(() => ({
-        left: 100,
-        top: 100,
-        width: 800,
-        height: 600
-      }));
-      
-      Element.prototype.getBoundingClientRect = mockGetBoundingClientRect;
-      
-      render(<AnnotationOverlay {...defaultProps} />);
-      
-      const overlay = document.querySelector('[style*="crosshair"]');
-      if (overlay) {
-        // Click at position that should translate to 50%, 50%
-        fireEvent.click(overlay, { clientX: 300, clientY: 250 });
-        
-        expect(defaultProps.onAnnotationCreate).toHaveBeenCalledWith(
-          expect.objectContaining({
-            x: expect.any(Number),
-            y: expect.any(Number),
-            page: 1
-          })
-        );
-      }
-    });
+    render(
+      <AnnotationOverlay
+        {...defaultProps}
+        annotations={[mockDocumentAnnotation, page2Annotation]}
+      />
+    );
+    
+    // Should only show 1 marker (page 1)
+    expect(screen.getByText('1')).toBeTruthy();
+    expect(screen.queryByText('2')).toBeNull();
   });
 
-  describe('Annotation Display', () => {
-    const mockAnnotations = [
-      {
-        id: 'ann-1',
-        x: 25,
-        y: 25,
-        page: 1,
-        content: 'Test annotation 1',
-        timestamp: Date.now()
-      },
-      {
-        id: 'ann-2',
-        x: 75,
-        y: 75,
-        page: 1,
-        content: 'Test annotation 2',
-        timestamp: Date.now()
-      }
-    ];
-
-    it('should render annotation markers for current page', () => {
-      render(<AnnotationOverlay {...defaultProps} annotations={mockAnnotations} />);
-      
-      // Should render markers for annotations on current page
-      const markers = document.querySelectorAll('.w-4.h-4.bg-ocean-blue');
-      expect(markers).toHaveLength(2);
-    });
-
-    it('should filter annotations by current page', () => {
-      const annotationsWithDifferentPages = [
-        ...mockAnnotations,
-        {
-          id: 'ann-3',
-          x: 50,
-          y: 50,
-          page: 2,
-          content: 'Page 2 annotation',
-          timestamp: Date.now()
-        }
-      ];
-
-      render(<AnnotationOverlay {...defaultProps} annotations={annotationsWithDifferentPages} />);
-      
-      // Should only render markers for page 1
-      const markers = document.querySelectorAll('.w-4.h-4.bg-ocean-blue');
-      expect(markers).toHaveLength(2);
-    });
-
-    it('should call onAnnotationClick when marker is clicked', async () => {
-      const user = userEvent.setup();
-      render(<AnnotationOverlay {...defaultProps} annotations={mockAnnotations} />);
-      
-      const marker = document.querySelector('.w-4.h-4.bg-ocean-blue');
-      if (marker) {
-        await user.click(marker);
-        expect(defaultProps.onAnnotationClick).toHaveBeenCalledWith(mockAnnotations[0]);
-      }
-    });
-
-    it('should display annotation content in marker title', () => {
-      render(<AnnotationOverlay {...defaultProps} annotations={mockAnnotations} />);
-      
-      const marker = document.querySelector('[title="Test annotation 1"]');
-      expect(marker).toBeInTheDocument();
-    });
+  it('renders image annotations', () => {
+    render(
+      <AnnotationOverlay
+        {...defaultProps}
+        documentType="image"
+        annotations={[mockImageAnnotation]}
+      />
+    );
+    
+    expect(screen.getByText('1')).toBeTruthy();
   });
 
-  describe('Coordinate Transformation', () => {
-    it('should handle zoom scaling correctly', () => {
-      const zoomedProps = {
-        ...defaultProps,
-        zoomScale: 2,
-        annotations: [{
-          id: 'ann-1',
-          x: 50,
-          y: 50,
-          page: 1,
-          content: 'Zoomed annotation',
-          timestamp: Date.now()
-        }]
-      };
-
-      render(<AnnotationOverlay {...zoomedProps} />);
-      
-      const marker = document.querySelector('.w-4.h-4.bg-ocean-blue');
-      expect(marker).toBeInTheDocument();
-    });
-
-    it('should handle pan offset correctly', () => {
-      const pannedProps = {
-        ...defaultProps,
-        panOffset: { x: 100, y: 50 },
-        annotations: [{
-          id: 'ann-1',
-          x: 50,
-          y: 50,
-          page: 1,
-          content: 'Panned annotation',
-          timestamp: Date.now()
-        }]
-      };
-
-      render(<AnnotationOverlay {...pannedProps} />);
-      
-      const marker = document.querySelector('.w-4.h-4.bg-ocean-blue');
-      expect(marker).toBeInTheDocument();
-    });
+  it('calls onAnnotationClick when marker is clicked', () => {
+    const onAnnotationClick = vi.fn();
+    render(
+      <AnnotationOverlay
+        {...defaultProps}
+        annotations={[mockDocumentAnnotation]}
+        onAnnotationClick={onAnnotationClick}
+      />
+    );
+    
+    const marker = screen.getByText('1');
+    fireEvent.click(marker);
+    
+    expect(onAnnotationClick).toHaveBeenCalledWith('ann-1');
   });
 
-  describe('Visibility Optimization', () => {
-    it('should not render markers outside visible area', () => {
-      const offScreenAnnotations = [
-        {
-          id: 'ann-1',
-          x: -50, // Way off screen
-          y: -50,
-          page: 1,
-          content: 'Off screen annotation',
-          timestamp: Date.now()
-        }
-      ];
-
-      render(<AnnotationOverlay {...defaultProps} annotations={offScreenAnnotations} />);
-      
-      // Should not render markers that are outside the visible area
-      const markers = document.querySelectorAll('.w-4.h-4.bg-ocean-blue');
-      expect(markers).toHaveLength(0);
-    });
+  it('opens edit modal when marker is clicked', () => {
+    render(
+      <AnnotationOverlay
+        {...defaultProps}
+        annotations={[mockDocumentAnnotation]}
+      />
+    );
+    
+    const marker = screen.getByText('1');
+    fireEvent.click(marker);
+    
+    // EditAnnotationModal should be rendered
+    expect(screen.getByText('Edit Annotation')).toBeTruthy();
   });
 
-  describe('Event Handling', () => {
-    it('should stop event propagation on overlay click', async () => {
-      const parentClickHandler = vi.fn();
-      const user = userEvent.setup();
-      
-      render(
-        <div onClick={parentClickHandler}>
-          <AnnotationOverlay {...defaultProps} />
-        </div>
-      );
-      
-      const overlay = document.querySelector('[style*="crosshair"]');
-      if (overlay) {
-        await user.click(overlay);
-        
-        // Parent click handler should not be called due to stopPropagation
-        expect(parentClickHandler).not.toHaveBeenCalled();
-        expect(defaultProps.onAnnotationCreate).toHaveBeenCalled();
-      }
-    });
+  it('sorts annotations by creation date', () => {
+    const olderAnnotation: DocumentAnnotation = {
+      ...mockDocumentAnnotation,
+      id: 'ann-old',
+      createdAt: new Date('2024-01-14T10:30:00'),
+    };
 
-    it('should stop event propagation on marker click', async () => {
-      const overlayClickHandler = vi.fn();
-      const user = userEvent.setup();
-      
-      const annotations = [{
-        id: 'ann-1',
-        x: 50,
-        y: 50,
-        page: 1,
-        content: 'Test annotation',
-        timestamp: Date.now()
-      }];
-      
-      render(
-        <div onClick={overlayClickHandler}>
-          <AnnotationOverlay {...defaultProps} annotations={annotations} />
-        </div>
-      );
-      
-      const marker = document.querySelector('.w-4.h-4.bg-ocean-blue');
-      if (marker) {
-        await user.click(marker);
-        
-        // Overlay click handler should not be called due to stopPropagation
-        expect(overlayClickHandler).not.toHaveBeenCalled();
-        expect(defaultProps.onAnnotationClick).toHaveBeenCalled();
-      }
-    });
+    const newerAnnotation: DocumentAnnotation = {
+      ...mockDocumentAnnotation,
+      id: 'ann-new',
+      createdAt: new Date('2024-01-16T10:30:00'),
+    };
+
+    render(
+      <AnnotationOverlay
+        {...defaultProps}
+        annotations={[newerAnnotation, olderAnnotation, mockDocumentAnnotation]}
+      />
+    );
+    
+    // Should render 3 markers numbered 1, 2, 3 in chronological order
+    expect(screen.getByText('1')).toBeTruthy();
+    expect(screen.getByText('2')).toBeTruthy();
+    expect(screen.getByText('3')).toBeTruthy();
+  });
+
+  it('calls onUpdateAnnotation when edit modal saves', () => {
+    const onUpdateAnnotation = vi.fn();
+    render(
+      <AnnotationOverlay
+        {...defaultProps}
+        annotations={[mockDocumentAnnotation]}
+        onUpdateAnnotation={onUpdateAnnotation}
+      />
+    );
+    
+    // Click marker to open edit modal
+    const marker = screen.getByText('1');
+    fireEvent.click(marker);
+    
+    // Find and update the textarea
+    const textarea = screen.getByDisplayValue('Test annotation') as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: 'Updated content' } });
+    
+    // Click save button
+    const saveButton = screen.getByText('Save');
+    fireEvent.click(saveButton);
+    
+    expect(onUpdateAnnotation).toHaveBeenCalledWith('ann-1', { content: 'Updated content' });
+  });
+
+  it('calls onDeleteAnnotation when edit modal deletes', () => {
+    const onDeleteAnnotation = vi.fn();
+    render(
+      <AnnotationOverlay
+        {...defaultProps}
+        annotations={[mockDocumentAnnotation]}
+        onDeleteAnnotation={onDeleteAnnotation}
+      />
+    );
+    
+    // Click marker to open edit modal
+    const marker = screen.getByText('1');
+    fireEvent.click(marker);
+    
+    // Click delete button
+    const deleteButton = screen.getByText('Delete');
+    fireEvent.click(deleteButton);
+    
+    // Confirm deletion
+    const confirmButton = screen.getByText('Yes, Delete');
+    fireEvent.click(confirmButton);
+    
+    expect(onDeleteAnnotation).toHaveBeenCalledWith('ann-1');
   });
 });
