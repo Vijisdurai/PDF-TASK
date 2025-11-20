@@ -56,25 +56,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             </div>
           </div>
         )}
-
-        {/* Sync status indicator */}
-        {state.syncStatus === 'syncing' && (
-          <div className="fixed bottom-4 right-4 bg-ocean-500 text-white px-4 py-2 rounded-lg shadow-lg z-40">
-            <div className="flex items-center space-x-2">
-              <LoadingSpinner size="sm" />
-              <span className="text-sm font-medium">Syncing...</span>
-            </div>
-          </div>
-        )}
-
-        {state.syncStatus === 'error' && (
-          <div className="fixed bottom-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg z-40">
-            <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-red-300 rounded-full"></div>
-              <span className="text-sm font-medium">Sync Error</span>
-            </div>
-          </div>
-        )}
       </div>
     </ErrorBoundary>
   );

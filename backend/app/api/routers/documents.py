@@ -73,6 +73,15 @@ async def upload_document(
                 }
             )
         
+        # Check for duplicate filename
+        document_service = DocumentService(db)
+        existing_document = document_service.get_document_by_original_filename(file.filename)
+        if existing_document:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"File '{file.filename}' already exists"
+            )
+        
         # Generate unique filename and save file
         file_extension = Path(file.filename).suffix
         unique_filename = f"{uuid.uuid4()}{file_extension}"
@@ -86,7 +95,6 @@ async def upload_document(
             buffer.write(file_content)
         
         # Create document record
-        document_service = DocumentService(db)
         document_data = DocumentCreate(
             filename=unique_filename,
             original_filename=file.filename,
@@ -263,12 +271,12 @@ async def get_document_file(
 @router.get("/", response_model=List[DocumentMetadata])
 async def list_documents(
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 10000,  # Allow up to 10,000 documents
     db: Session = Depends(get_db)
 ):
     """Get list of documents with pagination"""
-    if limit > 100:
-        limit = 100  # Prevent excessive data retrieval
+    if limit > 10000:
+        limit = 10000  # Cap at 10,000 to prevent excessive memory usage
     
     document_service = DocumentService(db)
     documents = document_service.get_documents(skip=skip, limit=limit)

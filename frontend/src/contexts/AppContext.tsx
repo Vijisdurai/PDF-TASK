@@ -12,16 +12,33 @@ export interface DocumentMetadata {
   convertedPath?: string;
 }
 
-export interface Annotation {
+// Base annotation interface
+export interface AnnotationBase {
   id: string;
   documentId: string;
-  page: number;
-  xPercent: number;
-  yPercent: number;
   content: string;
   createdAt: Date;
   updatedAt: Date;
 }
+
+// Document annotation (page-based with percentage coordinates)
+export interface DocumentAnnotation extends AnnotationBase {
+  type: 'document';
+  page: number;
+  xPercent: number;
+  yPercent: number;
+}
+
+// Image annotation (pixel-based coordinates)
+export interface ImageAnnotation extends AnnotationBase {
+  type: 'image';
+  xPixel: number;
+  yPixel: number;
+  color?: string; // Hex color code
+}
+
+// Union type for all annotation types
+export type Annotation = DocumentAnnotation | ImageAnnotation;
 
 export interface ViewerState {
   currentPage: number;
@@ -47,23 +64,22 @@ export interface AppState {
   
   // Network state
   isOnline: boolean;
-  syncStatus: 'idle' | 'syncing' | 'error' | 'success';
 }
 
 // Action types
 export type AppAction =
   | { type: 'SET_DOCUMENTS'; payload: DocumentMetadata[] }
   | { type: 'ADD_DOCUMENT'; payload: DocumentMetadata }
+  | { type: 'REMOVE_DOCUMENT'; payload: string }
   | { type: 'SET_CURRENT_DOCUMENT'; payload: DocumentMetadata | null }
   | { type: 'SET_ANNOTATIONS'; payload: Annotation[] }
   | { type: 'ADD_ANNOTATION'; payload: Annotation }
-  | { type: 'UPDATE_ANNOTATION'; payload: { id: string; content: string } }
+  | { type: 'UPDATE_ANNOTATION'; payload: { id: string; updates: Partial<Omit<Annotation, 'id' | 'documentId' | 'createdAt'>> } }
   | { type: 'DELETE_ANNOTATION'; payload: string }
   | { type: 'SET_VIEWER_STATE'; payload: Partial<ViewerState> }
   | { type: 'TOGGLE_NOTE_PANEL' }
   | { type: 'SET_UPLOADING'; payload: boolean }
-  | { type: 'SET_ONLINE_STATUS'; payload: boolean }
-  | { type: 'SET_SYNC_STATUS'; payload: AppState['syncStatus'] };
+  | { type: 'SET_ONLINE_STATUS'; payload: boolean };
 
 // Initial state
 const initialState: AppState = {
@@ -79,7 +95,6 @@ const initialState: AppState = {
   isNotePanelOpen: true,
   isUploading: false,
   isOnline: navigator.onLine,
-  syncStatus: 'idle',
 };
 
 // Reducer function
@@ -92,6 +107,14 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { 
         ...state, 
         documents: [...state.documents, action.payload] 
+      };
+    
+    case 'REMOVE_DOCUMENT':
+      return {
+        ...state,
+        documents: state.documents.filter(doc => doc.id !== action.payload),
+        // Clear current document if it's the one being deleted
+        currentDocument: state.currentDocument?.id === action.payload ? null : state.currentDocument
       };
     
     case 'SET_CURRENT_DOCUMENT':
@@ -111,7 +134,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         annotations: state.annotations.map(annotation =>
           annotation.id === action.payload.id
-            ? { ...annotation, content: action.payload.content, updatedAt: new Date() }
+            ? { ...annotation, ...action.payload.updates, updatedAt: new Date() }
             : annotation
         ),
       };
@@ -136,9 +159,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
     
     case 'SET_ONLINE_STATUS':
       return { ...state, isOnline: action.payload };
-    
-    case 'SET_SYNC_STATUS':
-      return { ...state, syncStatus: action.payload };
     
     default:
       return state;

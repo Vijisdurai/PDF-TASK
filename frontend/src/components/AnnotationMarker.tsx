@@ -6,6 +6,7 @@ interface AnnotationMarkerProps {
   x: number; // Screen coordinate
   y: number; // Screen coordinate
   content?: string;
+  number?: number; // Annotation number (1, 2, 3, etc.)
   isSelected?: boolean;
   isHovered?: boolean;
   onClick: (event: React.MouseEvent) => void;
@@ -17,6 +18,7 @@ const AnnotationMarker: React.FC<AnnotationMarkerProps> = ({
   x,
   y,
   content,
+  number,
   isSelected = false,
   isHovered = false,
   onClick,
@@ -26,8 +28,8 @@ const AnnotationMarker: React.FC<AnnotationMarkerProps> = ({
     <motion.div
       className="absolute pointer-events-auto"
       style={{
-        left: x - 8, // Center the 16px marker
-        top: y - 8,
+        left: x - 12, // Center the 24px marker
+        top: y - 12,
         transform: 'translate(0, 0)', // Prevent transform interference
         zIndex: isSelected ? 20 : 10 // Selected markers appear on top
       }}
@@ -62,26 +64,25 @@ const AnnotationMarker: React.FC<AnnotationMarkerProps> = ({
       {/* Main marker */}
       <div
         className={`
-          w-4 h-4 rounded-full shadow-lg cursor-pointer transition-all duration-200
+          w-6 h-6 rounded-full shadow-lg cursor-pointer transition-all duration-200 flex items-center justify-center
           ${isSelected 
-            ? 'bg-ocean-blue border-2 border-off-white ring-2 ring-ocean-blue/30' 
-            : 'bg-ocean-blue border-2 border-off-white hover:bg-ocean-blue/80'
+            ? 'bg-ocean-500 border-2 border-off-white ring-2 ring-ocean-blue/30' 
+            : 'bg-ocean-500 border-2 border-off-white hover:bg-ocean-400'
           }
         `}
         onClick={onClick}
         title={content || 'Click to view annotation'}
       >
-        {/* Inner dot for better visibility */}
-        <div 
-          className={`
-            w-1 h-1 rounded-full absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2
-            ${isSelected ? 'bg-off-white' : 'bg-off-white'}
-          `} 
-        />
+        {/* Number display */}
+        {number !== undefined && (
+          <span className="text-white text-xs font-bold leading-none select-none">
+            {number}
+          </span>
+        )}
         
         {/* Pulse animation for new markers */}
         <motion.div
-          className="absolute inset-0 w-4 h-4 bg-ocean-blue rounded-full"
+          className="absolute inset-0 w-6 h-6 bg-ocean-500 rounded-full -z-10"
           initial={{ scale: 1, opacity: 0.8 }}
           animate={{ scale: 2, opacity: 0 }}
           transition={{ 

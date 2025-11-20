@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     
     # File upload settings
-    max_file_size: int = 100 * 1024 * 1024  # 100MB
+    max_file_size: int = 10 * 1024 * 1024 * 1024  # 10GB - effectively unlimited for most use cases
     upload_dir: str = "uploads"
     allowed_file_types: list = [
         "application/pdf",

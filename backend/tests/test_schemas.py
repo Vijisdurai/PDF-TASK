@@ -8,7 +8,7 @@ from app.schemas.document import (
 )
 from app.schemas.annotation import (
     AnnotationBase, AnnotationCreate, AnnotationUpdate, AnnotationResponse,
-    AnnotationListResponse, AnnotationBulkCreate, AnnotationSyncRequest, AnnotationSyncResponse
+    AnnotationListResponse, AnnotationBulkCreate
 )
 
 
@@ -283,41 +283,6 @@ class TestAnnotationSchemas:
                 annotations=too_many_annotations
             )
         assert "List should have at most 50 items" in str(exc_info.value)
-    
-    def test_annotation_sync_request(self):
-        """Test AnnotationSyncRequest schema"""
-        # Without last_sync
-        data = {
-            "document_id": "123e4567-e89b-12d3-a456-426614174000",
-            "local_annotations": []
-        }
-        schema = AnnotationSyncRequest(**data)
-        assert schema.document_id == data["document_id"]
-        assert schema.last_sync is None
-        assert schema.local_annotations == []
-        
-        # With last_sync
-        now = datetime.now()
-        data_with_sync = {
-            "document_id": "123e4567-e89b-12d3-a456-426614174000",
-            "last_sync": now,
-            "local_annotations": []
-        }
-        schema = AnnotationSyncRequest(**data_with_sync)
-        assert schema.last_sync == now
-    
-    def test_annotation_sync_response(self):
-        """Test AnnotationSyncResponse schema"""
-        now = datetime.now()
-        data = {
-            "server_annotations": [],
-            "conflicts": [],
-            "sync_timestamp": now
-        }
-        schema = AnnotationSyncResponse(**data)
-        assert schema.server_annotations == []
-        assert schema.conflicts == []
-        assert schema.sync_timestamp == now
 
 
 class TestSchemaIntegration:

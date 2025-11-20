@@ -44,7 +44,7 @@ const Header: React.FC = () => {
                 />
               </svg>
             </div>
-            <span className="text-xl font-bold hidden sm:block">Document Annotator</span>
+            <span className="text-xl font-bold hidden sm:block">Library</span>
           </Link>
 
           {/* Breadcrumb navigation */}

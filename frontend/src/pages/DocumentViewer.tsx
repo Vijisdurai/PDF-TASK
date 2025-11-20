@@ -1,7 +1,8 @@
 import React, { useEffect, useCallback } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { useAppContext } from '../contexts/AppContext';
-import { useDatabase } from '../hooks/useDatabase';
+import { useAnnotations } from '../hooks/useAnnotations';
+import { useToast } from '../components/ToastContainer';
 import DocumentViewer from '../components/DocumentViewer';
 import { apiService } from '../services/api';
 
@@ -17,41 +18,43 @@ interface AnnotationPoint {
 const DocumentViewerPage: React.FC = () => {
   const { documentId } = useParams<{ documentId: string }>();
   const { state, dispatch } = useAppContext();
-  const { loadAnnotations, saveAnnotation } = useDatabase();
+  const { showToast } = useToast();
+  
+  const {
+    createAnnotation,
+  } = useAnnotations(documentId);
 
   // Find the document by ID
   const document = state.documents.find(doc => doc.id === documentId);
 
-  // Set current document and load annotations when component mounts
+  // Set current document when component mounts
   useEffect(() => {
-    if (document && documentId) {
+    if (document) {
       dispatch({ type: 'SET_CURRENT_DOCUMENT', payload: document });
-      loadAnnotations(documentId);
     }
-  }, [document, documentId, dispatch, loadAnnotations]);
+  }, [document, dispatch]);
 
   // Handle annotation creation
   const handleAnnotationCreate = useCallback(async (annotation: Omit<AnnotationPoint, 'id' | 'timestamp'>) => {
     if (!documentId) return;
 
-    const newAnnotation = {
-      id: `ann-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    const newAnnotation: Omit<import('../contexts/AppContext').DocumentAnnotation, 'id' | 'createdAt' | 'updatedAt'> = {
       documentId,
+      type: 'document',
       xPercent: annotation.x,
       yPercent: annotation.y,
       page: annotation.page || state.viewerState.currentPage,
       content: annotation.content || '',
-      createdAt: new Date(),
-      updatedAt: new Date()
     };
 
     try {
-      await saveAnnotation(newAnnotation);
-      // The annotation will be added to state by the database hook
+      await createAnnotation(newAnnotation);
+      showToast('Annotation created', 'success', 2000);
     } catch (error) {
       console.error('Failed to save annotation:', error);
+      showToast('Failed to create annotation', 'error');
     }
-  }, [documentId, saveAnnotation, state.viewerState.currentPage]);
+  }, [documentId, createAnnotation, state.viewerState.currentPage, showToast]);
 
   // Handle annotation click
   const handleAnnotationClick = useCallback((annotation: AnnotationPoint) => {
@@ -121,8 +124,10 @@ const DocumentViewerPage: React.FC = () => {
                     key={annotation.id}
                     className="bg-navy-800 rounded-lg p-3 border border-navy-700"
                   >
-                    <div className="text-sm text-gray-400 mb-1">
-                      {annotation.createdAt.toLocaleTimeString()}
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-sm text-gray-400">
+                        {annotation.createdAt.toLocaleTimeString()}
+                      </div>
                     </div>
                     <div className="text-off-white text-sm">
                       {annotation.content}

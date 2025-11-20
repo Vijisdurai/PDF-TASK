@@ -45,6 +45,10 @@ class DocumentService:
         """Get list of documents with pagination"""
         return self.db.query(Document).offset(skip).limit(limit).all()
     
+    def get_document_by_original_filename(self, original_filename: str) -> Optional[Document]:
+        """Check if a document with the same original filename exists"""
+        return self.db.query(Document).filter(Document.original_filename == original_filename).first()
+    
     def update_document(self, document_id: str, document_data: DocumentUpdate) -> Optional[Document]:
         """Update document metadata"""
         try:

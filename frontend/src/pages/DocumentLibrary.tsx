@@ -12,17 +12,15 @@ const DocumentLibrary: React.FC = () => {
   const [showUpload, setShowUpload] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const [uploadedCount, setUploadedCount] = useState(0);
 
   const handleUploadSuccess = (document: DocumentMetadata) => {
     setUploadError(null);
-    const fileName = document.originalFilename || document.filename;
-    setUploadSuccess(`${fileName} uploaded successfully!`);
-    
-    // Clear success message after 5 seconds
-    setTimeout(() => setUploadSuccess(null), 5000);
-    
-    // Trigger immediate refresh to update the document list
-    refreshDocuments();
+    // Don't show individual success messages during batch upload
+    // The completion handler will show the final message
     console.log('Document uploaded successfully:', document);
   };
 
@@ -37,27 +35,45 @@ const DocumentLibrary: React.FC = () => {
   };
 
   const handleDocumentDelete = async (documentId: string) => {
+    setIsDeleting(true);
+    setUploadError(null);
     try {
       await deleteDocument(documentId);
+      
+      // Refresh the document list to ensure UI is in sync
+      await refreshDocuments();
+      
+      setUploadSuccess('Document deleted successfully!');
+      setTimeout(() => setUploadSuccess(null), 3000);
     } catch (error) {
       console.error('Failed to delete document:', error);
+      setUploadError('Failed to delete document. Please try again.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
   const handleBulkDelete = async (documentIds: string[]) => {
+    setIsDeleting(true);
+    setUploadError(null);
     try {
       // Delete documents one by one using the existing delete function
       for (const documentId of documentIds) {
         await deleteDocument(documentId);
       }
       
+      // Refresh the document list to ensure UI is in sync
+      await refreshDocuments();
+      
       // Show success message
       setUploadSuccess(`Successfully deleted ${documentIds.length} document${documentIds.length > 1 ? 's' : ''}!`);
-      setTimeout(() => setUploadSuccess(null), 5000);
+      setTimeout(() => setUploadSuccess(null), 3000);
       
     } catch (error) {
       console.error('Failed to delete documents:', error);
       setUploadError('Failed to delete some documents. Please try again.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -85,18 +101,6 @@ const DocumentLibrary: React.FC = () => {
           </div>
           
           <div className="flex items-center space-x-3">
-            {/* Online/Offline Status */}
-            <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-sm ${
-              state.isOnline 
-                ? 'bg-green-900/30 text-green-400 border border-green-700' 
-                : 'bg-red-900/30 text-red-400 border border-red-700'
-            }`}>
-              <div className={`w-2 h-2 rounded-full ${
-                state.isOnline ? 'bg-green-400' : 'bg-red-400'
-              }`} />
-              <span>{state.isOnline ? 'Online' : 'Offline'}</span>
-            </div>
-
             {/* Refresh Button */}
             <button
               onClick={handleRefresh}
@@ -146,10 +150,113 @@ const DocumentLibrary: React.FC = () => {
             <FileUpload
               onUploadSuccess={handleUploadSuccess}
               onUploadError={handleUploadError}
+              onUploadStart={(count) => {
+                setIsUploading(true);
+                setUploadingCount(count);
+                setUploadedCount(0);
+              }}
+              onUploadProgress={(uploaded, total) => {
+                console.log('Upload progress:', uploaded, 'of', total);
+                setUploadedCount(uploaded);
+                setUploadingCount(total);
+              }}
+              onUploadComplete={() => {
+                // Keep the overlay visible for a moment to show completion
+                setTimeout(() => {
+                  setIsUploading(false);
+                  setUploadingCount(0);
+                  setUploadedCount(0);
+                  
+                  // Refresh documents after all uploads complete
+                  refreshDocuments();
+                  
+                  // Show success message
+                  setUploadSuccess('Upload complete!');
+                  setTimeout(() => setUploadSuccess(null), 3000);
+                  
+                  // Close upload section
+                  setShowUpload(false);
+                }, 800);
+              }}
+              existingFiles={documents.map(doc => doc.originalFilename || doc.filename)}
             />
           </div>
         )}
       </div>
+
+      {/* Uploading Overlay */}
+      {isUploading && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center animate-fade-in">
+          <div className="bg-navy-800 border border-navy-600 rounded-lg p-6 shadow-2xl min-w-[320px] animate-scale-in">
+            <div className="space-y-3">
+              <div className="flex items-center space-x-4">
+                {uploadedCount === uploadingCount && uploadingCount > 0 ? (
+                  <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                    <CheckCircle className="w-8 h-8 text-green-500 animate-scale-in" />
+                  </div>
+                ) : (
+                  <div className="w-8 h-8 border-2 border-ocean-blue border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                )}
+                <div className="flex-1">
+                  <p className="text-off-white font-medium transition-all duration-300">
+                    {uploadedCount === uploadingCount && uploadingCount > 0 
+                      ? 'Upload complete!' 
+                      : 'Uploading documents...'}
+                  </p>
+                  <p className="text-gray-400 text-sm mt-1 transition-all duration-300">
+                    {uploadingCount === 1 
+                      ? uploadedCount === 0 
+                        ? 'Uploading file...'
+                        : 'File uploaded successfully'
+                      : `${uploadedCount} of ${uploadingCount} files uploaded`
+                    }
+                  </p>
+                </div>
+              </div>
+              
+              {/* Progress Bar */}
+              <div className="space-y-1">
+                <div className="w-full bg-navy-600 rounded-full h-2.5 overflow-hidden">
+                  <div
+                    key={`progress-${uploadedCount}-${uploadingCount}`}
+                    className={`h-full rounded-full transition-all duration-700 ease-out ${
+                      uploadedCount === uploadingCount && uploadingCount > 0
+                        ? 'bg-green-500'
+                        : 'bg-ocean-400'
+                    }`}
+                    style={{ 
+                      width: `${uploadingCount > 0 ? Math.round((uploadedCount / uploadingCount) * 100) : 0}%`
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between items-center">
+                  <p className="text-xs text-gray-500 transition-all duration-300">
+                    {uploadedCount} / {uploadingCount}
+                  </p>
+                  <p className="text-xs text-gray-500 font-medium transition-all duration-300">
+                    {uploadingCount > 0 ? Math.round((uploadedCount / uploadingCount) * 100) : 0}%
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deleting Overlay */}
+      {isDeleting && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-navy-800 border border-navy-600 rounded-lg p-6 shadow-2xl">
+            <div className="flex items-center space-x-4">
+              <div className="w-8 h-8 border-2 border-ocean-blue border-t-transparent rounded-full animate-spin" />
+              <div>
+                <p className="text-off-white font-medium">Deleting documents...</p>
+                <p className="text-gray-400 text-sm">Please wait</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Document List */}
       <DocumentList
@@ -170,9 +277,6 @@ const DocumentLibrary: React.FC = () => {
                 ? `${(documents.reduce((total, doc) => total + doc.size, 0) / (1024 * 1024)).toFixed(2)} MB`
                 : '0 MB'
               }
-            </span>
-            <span>
-              Sync Status: {state.syncStatus === 'idle' ? 'Up to date' : state.syncStatus}
             </span>
           </div>
         </div>

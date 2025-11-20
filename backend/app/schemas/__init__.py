@@ -12,9 +12,7 @@ from .annotation import (
     AnnotationUpdate,
     AnnotationResponse,
     AnnotationListResponse,
-    AnnotationBulkCreate,
-    AnnotationSyncRequest,
-    AnnotationSyncResponse
+    AnnotationBulkCreate
 )
 from .common import (
     ErrorResponse,
@@ -39,8 +37,6 @@ __all__ = [
     "AnnotationResponse",
     "AnnotationListResponse",
     "AnnotationBulkCreate",
-    "AnnotationSyncRequest",
-    "AnnotationSyncResponse",
     # Common schemas
     "ErrorResponse",
     "SuccessResponse",

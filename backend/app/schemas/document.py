@@ -62,8 +62,10 @@ class DocumentMetadata(BaseModel):
     """Lightweight document metadata schema"""
     id: str
     filename: str
+    original_filename: str
     mime_type: str
     file_size: int
+    converted_path: Optional[str] = None
     created_at: datetime
     
     class Config:

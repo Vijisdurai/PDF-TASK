@@ -100,8 +100,8 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
     return { x: screenX, y: screenY };
   }, [panOffset, zoomScale, documentWidth, documentHeight]);
 
-  // Handle click events for annotation creation
-  const handleOverlayClick = useCallback((event: React.MouseEvent) => {
+  // Handle double-click events for annotation creation
+  const handleOverlayDoubleClick = useCallback((event: React.MouseEvent) => {
     // Prevent event bubbling to document viewer
     event.stopPropagation();
     
@@ -109,27 +109,25 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
     
     const coords = screenToDocumentCoords(event.clientX, event.clientY);
     
-    // Only create annotation if click is within document bounds
-    if (coords.x >= 0 && coords.x <= 100 && coords.y >= 0 && coords.y <= 100) {
-      setIsCreatingAnnotation(true);
-      
-      // Open annotation input at click position
-      setInputState({
-        isOpen: true,
-        x: event.clientX,
-        y: event.clientY,
-        isEditing: false,
-        content: '',
-        annotationId: undefined
-      });
-      
-      // Store the coordinates for when the user saves
-      setInputState(prev => ({
-        ...prev,
-        pendingCoords: { xPercent: coords.x, yPercent: coords.y }
-      }));
+    // Validate coordinates are within 0-100 range before proceeding
+    if (coords.x < 0 || coords.x > 100 || coords.y < 0 || coords.y > 100) {
+      console.warn('Annotation coordinates out of bounds:', coords);
+      return;
     }
-  }, [screenToDocumentCoords, currentPage, isCreatingAnnotation, inputState.isOpen]);
+    
+    setIsCreatingAnnotation(true);
+    
+    // Open annotation input at click position
+    setInputState({
+      isOpen: true,
+      x: event.clientX,
+      y: event.clientY,
+      isEditing: false,
+      content: '',
+      annotationId: undefined,
+      pendingCoords: { xPercent: coords.x, yPercent: coords.y }
+    });
+  }, [screenToDocumentCoords, isCreatingAnnotation, inputState.isOpen]);
 
   // Handle annotation marker clicks
   const handleAnnotationClick = useCallback((annotation: AnnotationPoint, event: React.MouseEvent) => {
@@ -163,10 +161,17 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
       // Update existing annotation
       onAnnotationUpdate(inputState.annotationId, content);
     } else if (inputState.pendingCoords) {
-      // Create new annotation
+      // Validate coordinates are within 0-100 range before saving
+      const { xPercent, yPercent } = inputState.pendingCoords;
+      if (xPercent < 0 || xPercent > 100 || yPercent < 0 || yPercent > 100) {
+        console.error('Invalid annotation coordinates:', { xPercent, yPercent });
+        return;
+      }
+      
+      // Create new annotation with page number and percentage coordinates
       const newAnnotation = {
-        xPercent: inputState.pendingCoords.xPercent,
-        yPercent: inputState.pendingCoords.yPercent,
+        xPercent,
+        yPercent,
         page: currentPage,
         content
       };
@@ -222,13 +227,13 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
     <div
       ref={overlayRef}
       className="absolute inset-0 pointer-events-auto z-10"
-      onClick={handleOverlayClick}
+      onDoubleClick={handleOverlayDoubleClick}
       style={{
         cursor: isCreatingAnnotation ? 'wait' : 'crosshair'
       }}
     >
       {/* Render annotation markers */}
-      {currentPageAnnotations.map((annotation) => {
+      {currentPageAnnotations.map((annotation, index) => {
         const screenCoords = documentToScreenCoords(annotation.xPercent, annotation.yPercent);
         
         // Only render if annotation is visible within the container
@@ -247,6 +252,7 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
             x={screenCoords.x}
             y={screenCoords.y}
             content={annotation.content}
+            number={index + 1}
             isSelected={selectedAnnotationId === annotation.id}
             isHovered={hoveredAnnotationId === annotation.id}
             onClick={(e) => handleAnnotationClick(annotation, e)}

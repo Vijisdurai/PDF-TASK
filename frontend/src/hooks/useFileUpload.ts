@@ -1,11 +1,11 @@
-import { useState, useCallback } from 'react';
-import { useAppContext } from '../contexts/AppContext';
+import { useState, useCallback, useRef } from 'react';
+import { useAppContext, type DocumentMetadata } from '../contexts/AppContext';
 import { apiService } from '../services/api';
 import { DatabaseService } from '../services/database';
 
-
 export interface UploadProgress {
   fileId: string;
+  fileName: string;
   progress: number;
   status: 'pending' | 'uploading' | 'success' | 'error';
   error?: string;
@@ -23,24 +23,35 @@ export const useFileUpload = (): UseFileUploadReturn => {
   const { dispatch } = useAppContext();
   const [uploadProgress, setUploadProgress] = useState<Record<string, UploadProgress>>({});
   const [isUploading, setIsUploading] = useState(false);
+  
+  // Use ref to track active uploads - prevents re-renders
+  const activeUploadsRef = useRef<Set<string>>(new Set());
 
   const updateProgress = useCallback((fileId: string, updates: Partial<UploadProgress>) => {
     setUploadProgress(prev => ({
       ...prev,
-      [fileId]: { ...prev[fileId], ...updates }
+      [fileId]: { ...prev[fileId], fileId, ...updates }
     }));
   }, []);
 
   const uploadFile = useCallback(async (file: File, fileId: string): Promise<DocumentMetadata> => {
+    // Prevent duplicate uploads of the same file
+    if (activeUploadsRef.current.has(fileId)) {
+      throw new Error('Upload already in progress for this file');
+    }
+
+    // Mark as active
+    activeUploadsRef.current.add(fileId);
+    setIsUploading(true);
+
     try {
       // Initialize progress tracking
       updateProgress(fileId, {
         fileId,
+        fileName: file.name,
         progress: 0,
         status: 'uploading'
       });
-
-      setIsUploading(true);
 
       // Upload to backend with progress tracking
       const response = await apiService.uploadDocument(file, (progress) => {
@@ -52,10 +63,10 @@ export const useFileUpload = (): UseFileUploadReturn => {
         await DatabaseService.addDocument(response.document);
       } catch (dbError) {
         console.error('Failed to store document in IndexedDB:', dbError);
-        // Continue with the upload process even if local storage fails
+        // Continue even if local storage fails
       }
 
-      // Update application state immediately
+      // Update application state
       dispatch({ type: 'ADD_DOCUMENT', payload: response.document });
 
       // Mark upload as successful
@@ -64,8 +75,6 @@ export const useFileUpload = (): UseFileUploadReturn => {
         status: 'success'
       });
 
-
-      
       return response.document;
 
     } catch (error) {
@@ -78,8 +87,13 @@ export const useFileUpload = (): UseFileUploadReturn => {
 
       console.error('Upload failed:', error);
       throw error;
+      
     } finally {
-      setIsUploading(false);
+      // Remove from active uploads
+      activeUploadsRef.current.delete(fileId);
+      
+      // Update isUploading state
+      setIsUploading(activeUploadsRef.current.size > 0);
     }
   }, [dispatch, updateProgress]);
 

@@ -17,44 +17,44 @@ const ImageViewerTest: React.FC = () => {
     setViewerState(prev => ({ ...prev, panOffset: offset }));
   };
 
-  const handleDocumentLoad = () => {
-    console.log('✅ Image loaded successfully');
-  };
-
   const handleAnnotationCreate = (annotation: any) => {
     console.log('✅ Annotation created:', annotation);
   };
 
   // Test with a sample image URL - replace with your actual image
-  const testImageUrl = 'https://via.placeholder.com/800x600/4A90E2/FFFFFF?text=Test+Image';
+  const testImageUrl = 'https://via.placeholder.com/1200x800/4A90E2/FFFFFF?text=Test+Image+for+Zoom';
+  const testDocumentId = 'test-document-id';
 
   return (
     <div className="h-screen bg-navy-900">
       <div className="h-full">
         <ImageViewer
           documentUrl={testImageUrl}
-          documentId="test-image-123"
+          documentId={testDocumentId}
           zoomScale={viewerState.zoomScale}
           panOffset={viewerState.panOffset}
           onZoomChange={handleZoomChange}
           onPanChange={handlePanChange}
-          onDocumentLoad={handleDocumentLoad}
           onAnnotationCreate={handleAnnotationCreate}
           annotations={[]}
         />
       </div>
       
       {/* Debug info */}
-      <div className="fixed bottom-4 right-4 bg-black bg-opacity-75 text-white p-3 rounded text-sm">
-        <div className="font-semibold mb-2">ImageViewer Debug Info:</div>
-        <div>Zoom: {Math.round(viewerState.zoomScale * 100)}%</div>
-        <div>Pan X: {Math.round(viewerState.panOffset.x)}px</div>
-        <div>Pan Y: {Math.round(viewerState.panOffset.y)}px</div>
-        <div className="mt-2 text-xs text-gray-300">
-          <div>✅ Auto-fit on load</div>
-          <div>✅ Zoom/pan controls</div>
-          <div>✅ Annotation toggle</div>
-          <div>✅ Sticky notes</div>
+      <div className="fixed bottom-4 right-4 bg-black bg-opacity-75 text-white p-4 rounded-lg text-sm shadow-xl">
+        <div className="font-semibold mb-3 text-ocean-blue">ImageViewer Zoom Test</div>
+        <div className="space-y-1">
+          <div>Zoom: <span className="font-mono text-green-400">{Math.round(viewerState.zoomScale * 100)}%</span></div>
+          <div>Pan X: <span className="font-mono">{Math.round(viewerState.panOffset.x)}px</span></div>
+          <div>Pan Y: <span className="font-mono">{Math.round(viewerState.panOffset.y)}px</span></div>
+        </div>
+        <div className="mt-3 pt-3 border-t border-gray-700 text-xs text-gray-300 space-y-1">
+          <div>✅ Zoom via buttons</div>
+          <div>✅ Zoom via mouse scroll</div>
+          <div>✅ Keyboard shortcuts (+, -, 0)</div>
+          <div>✅ Maintains aspect ratio</div>
+          <div>✅ Smooth transitions</div>
+          <div>✅ Double-click to annotate</div>
         </div>
       </div>
     </div>

@@ -164,6 +164,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({
         try {
           await onBulkDelete(selectedIds);
           setSelectedDocuments(new Set()); // Clear selection after successful delete
+        } catch (error) {
+          console.error('Bulk delete failed:', error);
         } finally {
           setIsBulkDeleting(false);
         }
@@ -266,7 +268,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({
               `}
             >
               {/* Selection Checkbox */}
-              <div className="absolute top-2 left-2 z-10 p-1 rounded bg-navy-900/50 backdrop-blur-sm hover:bg-navy-900/70 transition-colors">
+              <div className={`absolute top-2 left-2 z-10 p-1 rounded bg-navy-900/50 backdrop-blur-sm hover:bg-navy-900/70 transition-all ${
+                selectedDocuments.has(document.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+              }`}>
                 <input
                   type="checkbox"
                   checked={selectedDocuments.has(document.id)}
@@ -329,7 +333,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({
             >
               <div className="flex items-center space-x-4 flex-1 min-w-0">
                 {/* Selection Checkbox */}
-                <div className="p-1 rounded bg-navy-900/50 backdrop-blur-sm hover:bg-navy-900/70 transition-colors">
+                <div className={`p-1 rounded bg-navy-900/50 backdrop-blur-sm hover:bg-navy-900/70 transition-all ${
+                  selectedDocuments.has(document.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                }`}>
                   <input
                     type="checkbox"
                     checked={selectedDocuments.has(document.id)}

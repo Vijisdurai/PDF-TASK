@@ -230,6 +230,9 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
+  // Enable panning when zoomed in (not at default 1.0 scale)
+  const isPannable = zoomScale !== 1.0;
+
   // Handle mouse wheel zoom with smooth animation
   const handleWheel = useCallback((event: React.WheelEvent) => {
     if (event.ctrlKey || event.metaKey) {
@@ -240,24 +243,25 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
     }
   }, [zoomScale, onZoomChange]);
 
-  // Handle mouse drag for panning
+  // Handle mouse drag for panning (only when PDF is larger than container)
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   const handleMouseDown = useCallback((event: React.MouseEvent) => {
+    if (!isPannable) return;
     setIsDragging(true);
     setDragStart({ x: event.clientX - panOffset.x, y: event.clientY - panOffset.y });
-  }, [panOffset]);
+  }, [isPannable, panOffset]);
 
   const handleMouseMove = useCallback((event: React.MouseEvent) => {
-    if (!isDragging) return;
+    if (!isDragging || !isPannable) return;
 
     const newOffset = {
       x: event.clientX - dragStart.x,
       y: event.clientY - dragStart.y
     };
     onPanChange(newOffset);
-  }, [isDragging, dragStart, onPanChange]);
+  }, [isDragging, isPannable, dragStart, onPanChange]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
@@ -464,27 +468,15 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
       {/* Canvas container */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-auto bg-navy-800 relative"
+        className="flex-1 overflow-hidden bg-navy-800 relative flex items-center justify-center"
         onWheel={handleWheel}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+        style={{ cursor: isPannable ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
       >
         <motion.div
-          className="inline-block relative"
-          style={{
-            minWidth: '100%',
-            minHeight: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
+          className="relative"
           animate={{
             x: panOffset.x,
-            y: panOffset.y,
-            scale: 1
+            y: panOffset.y
           }}
           transition={{
             type: "spring",
@@ -492,17 +484,15 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
             damping: 30,
             mass: 0.8
           }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
         >
-          <motion.canvas
+          <canvas
             ref={canvasRef}
             className="shadow-lg border border-navy-600"
             style={{ display: 'block' }}
-            animate={{ scale: 1 }}
-            transition={{
-              type: "spring",
-              stiffness: 400,
-              damping: 25
-            }}
           />
 
           {/* Annotation Overlay */}

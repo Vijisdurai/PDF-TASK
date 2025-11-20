@@ -1,6 +1,6 @@
 import Dexie from 'dexie';
 import type { Table } from 'dexie';
-import type { DocumentMetadata, Annotation } from '../contexts/AppContext';
+import type { DocumentMetadata, Annotation, DocumentAnnotation, ImageAnnotation } from '../contexts/AppContext';
 
 // Extend the interfaces for IndexedDB storage
 export interface StoredDocument extends DocumentMetadata {
@@ -10,10 +10,28 @@ export interface StoredDocument extends DocumentMetadata {
   lastSyncAt?: Date;
 }
 
-export interface StoredAnnotation extends Annotation {
-  // Additional fields for offline storage
+// Base stored annotation with sync fields
+interface StoredAnnotationBase {
   syncStatus: 'synced' | 'pending' | 'error';
   lastSyncAt?: Date;
+}
+
+// Stored document annotation
+export interface StoredDocumentAnnotation extends DocumentAnnotation, StoredAnnotationBase {}
+
+// Stored image annotation
+export interface StoredImageAnnotation extends ImageAnnotation, StoredAnnotationBase {}
+
+// Union type for stored annotations
+export type StoredAnnotation = StoredDocumentAnnotation | StoredImageAnnotation;
+
+// Type guards for annotation discrimination
+export function isDocumentAnnotation(annotation: Annotation): annotation is DocumentAnnotation {
+  return annotation.type === 'document';
+}
+
+export function isImageAnnotation(annotation: Annotation): annotation is ImageAnnotation {
+  return annotation.type === 'image';
 }
 
 // Define the database schema
@@ -25,10 +43,23 @@ export class AnnotationDatabase extends Dexie {
   constructor() {
     super('AnnotationDatabase');
     
-    // Define schemas
+    // Version 1 schema (original)
     this.version(1).stores({
       documents: 'id, filename, originalFilename, mimeType, uploadedAt, syncStatus',
       annotations: 'id, documentId, page, [documentId+page], createdAt, syncStatus'
+    });
+
+    // Version 2 schema (add support for image annotations)
+    this.version(2).stores({
+      documents: 'id, filename, originalFilename, mimeType, uploadedAt, syncStatus',
+      annotations: 'id, documentId, page, type, [documentId+page], [documentId+type], createdAt, syncStatus'
+    }).upgrade(tx => {
+      // Migration logic: set annotation_type = 'document' for existing annotations
+      return tx.table('annotations').toCollection().modify(annotation => {
+        if (!annotation.type) {
+          annotation.type = 'document';
+        }
+      });
     });
   }
 }
@@ -84,6 +115,17 @@ export class DatabaseService {
 
   // Annotation operations
   static async addAnnotation(annotation: Annotation): Promise<void> {
+    // Validate annotation based on type
+    if (isDocumentAnnotation(annotation)) {
+      if (annotation.page === undefined || annotation.xPercent === undefined || annotation.yPercent === undefined) {
+        throw new Error('Document annotations must have page, xPercent, and yPercent fields');
+      }
+    } else if (isImageAnnotation(annotation)) {
+      if (annotation.xPixel === undefined || annotation.yPixel === undefined) {
+        throw new Error('Image annotations must have xPixel and yPixel fields');
+      }
+    }
+
     const storedAnnotation: StoredAnnotation = {
       ...annotation,
       syncStatus: 'pending',
@@ -95,10 +137,29 @@ export class DatabaseService {
     return await db.annotations.get(id);
   }
 
-  static async getAnnotationsByDocument(documentId: string): Promise<StoredAnnotation[]> {
+  static async getAnnotationsByDocument(
+    documentId: string, 
+    type?: 'document' | 'image'
+  ): Promise<StoredAnnotation[]> {
+    if (type) {
+      return await db.annotations
+        .where('[documentId+type]')
+        .equals([documentId, type])
+        .toArray();
+    }
     return await db.annotations
       .where('documentId')
       .equals(documentId)
+      .toArray();
+  }
+
+  static async getAnnotationsByDocumentAndType(
+    documentId: string,
+    type: 'document' | 'image'
+  ): Promise<StoredAnnotation[]> {
+    return await db.annotations
+      .where('[documentId+type]')
+      .equals([documentId, type])
       .toArray();
   }
 
@@ -112,7 +173,13 @@ export class DatabaseService {
       .toArray();
   }
 
-  static async updateAnnotation(id: string, changes: Partial<StoredAnnotation>): Promise<void> {
+  static async updateAnnotation(id: string, changes: Partial<Annotation> & Partial<StoredAnnotationBase>): Promise<void> {
+    // Get the existing annotation to validate type-specific updates
+    const existing = await db.annotations.get(id);
+    if (!existing) {
+      throw new Error(`Annotation with id ${id} not found`);
+    }
+
     await db.annotations.update(id, {
       ...changes,
       syncStatus: 'pending',

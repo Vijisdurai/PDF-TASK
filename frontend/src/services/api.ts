@@ -127,8 +127,8 @@ class ApiService {
     };
   }
 
-  async getDocuments(): Promise<DocumentMetadata[]> {
-    const backendResponse = await this.request<any[]>('/documents');
+  async getDocuments(limit: number = 10000): Promise<DocumentMetadata[]> {
+    const backendResponse = await this.request<any[]>(`/documents?limit=${limit}`);
     return backendResponse.map(doc => ({
       id: doc.id || crypto.randomUUID(),
       filename: doc.filename,
@@ -173,40 +173,137 @@ class ApiService {
   }
 
   // Annotation operations
-  async getAnnotations(documentId: string, page?: number): Promise<Annotation[]> {
+  async getAnnotations(documentId: string, page?: number, annotationType?: 'document' | 'image'): Promise<Annotation[]> {
     const params = new URLSearchParams();
     if (page !== undefined) {
       params.append('page', page.toString());
     }
+    if (annotationType) {
+      params.append('annotation_type', annotationType);
+    }
     
     const endpoint = `/annotations/${documentId}${params.toString() ? `?${params.toString()}` : ''}`;
-    return this.request<Annotation[]>(endpoint);
+    const response = await this.request<{ annotations: any[] }>(endpoint);
+    
+    // Transform backend response to frontend format
+    return response.annotations.map(ann => this.transformAnnotationFromBackend(ann));
   }
 
   async createAnnotation(annotation: Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>): Promise<Annotation> {
-    return this.request<Annotation>('/annotations', {
+    const payload = this.transformAnnotationToBackend(annotation);
+    const response = await this.request<any>('/annotations', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(annotation),
+      body: JSON.stringify(payload),
     });
+    return this.transformAnnotationFromBackend(response);
   }
 
-  async updateAnnotation(annotationId: string, content: string): Promise<Annotation> {
-    return this.request<Annotation>(`/annotations/${annotationId}`, {
+  async updateAnnotation(annotationId: string, updates: Partial<Omit<Annotation, 'id' | 'documentId' | 'createdAt'>>): Promise<Annotation> {
+    const payload = this.transformAnnotationUpdateToBackend(updates);
+    const response = await this.request<any>(`/annotations/${annotationId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(payload),
     });
+    return this.transformAnnotationFromBackend(response);
   }
 
   async deleteAnnotation(annotationId: string): Promise<void> {
     await this.request(`/annotations/${annotationId}`, {
       method: 'DELETE',
     });
+  }
+
+  // Transform annotation from backend format to frontend format
+  private transformAnnotationFromBackend(backendAnnotation: any): Annotation {
+    const base = {
+      id: backendAnnotation.id,
+      documentId: backendAnnotation.document_id,
+      content: backendAnnotation.content,
+      createdAt: new Date(backendAnnotation.created_at),
+      updatedAt: new Date(backendAnnotation.updated_at),
+    };
+
+    if (backendAnnotation.annotation_type === 'document') {
+      return {
+        ...base,
+        type: 'document',
+        page: backendAnnotation.page,
+        xPercent: Number(backendAnnotation.x_percent),
+        yPercent: Number(backendAnnotation.y_percent),
+      };
+    } else {
+      return {
+        ...base,
+        type: 'image',
+        xPixel: backendAnnotation.x_pixel,
+        yPixel: backendAnnotation.y_pixel,
+        color: backendAnnotation.color,
+      };
+    }
+  }
+
+  // Transform annotation from frontend format to backend format
+  private transformAnnotationToBackend(annotation: Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>): any {
+    if (annotation.type === 'document') {
+      return {
+        annotation_type: 'document',
+        document_id: annotation.documentId,
+        page: annotation.page,
+        x_percent: annotation.xPercent,
+        y_percent: annotation.yPercent,
+        content: annotation.content,
+      };
+    } else {
+      return {
+        annotation_type: 'image',
+        document_id: annotation.documentId,
+        x_pixel: annotation.xPixel,
+        y_pixel: annotation.yPixel,
+        content: annotation.content,
+        color: annotation.color,
+      };
+    }
+  }
+
+  // Transform annotation update from frontend format to backend format
+  private transformAnnotationUpdateToBackend(updates: Partial<Omit<Annotation, 'id' | 'documentId' | 'createdAt'>>): any {
+    const payload: any = {};
+    
+    if (updates.content !== undefined) {
+      payload.content = updates.content;
+    }
+    
+    if ('page' in updates && updates.page !== undefined) {
+      payload.page = updates.page;
+    }
+    
+    if ('xPercent' in updates && updates.xPercent !== undefined) {
+      payload.x_percent = updates.xPercent;
+    }
+    
+    if ('yPercent' in updates && updates.yPercent !== undefined) {
+      payload.y_percent = updates.yPercent;
+    }
+    
+    if ('xPixel' in updates && updates.xPixel !== undefined) {
+      payload.x_pixel = updates.xPixel;
+    }
+    
+    if ('yPixel' in updates && updates.yPixel !== undefined) {
+      payload.y_pixel = updates.yPixel;
+    }
+    
+    if ('color' in updates && updates.color !== undefined) {
+      payload.color = updates.color;
+    }
+    
+    return payload;
   }
 
   // Health check

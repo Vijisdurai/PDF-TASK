@@ -17,7 +17,6 @@ function TestComponent() {
       <div data-testid="note-panel">{state.isNotePanelOpen ? 'open' : 'closed'}</div>
       <div data-testid="uploading">{state.isUploading ? 'true' : 'false'}</div>
       <div data-testid="online">{state.isOnline ? 'true' : 'false'}</div>
-      <div data-testid="sync-status">{state.syncStatus}</div>
       
       <button 
         data-testid="add-document" 
@@ -104,16 +103,6 @@ function TestComponent() {
         })}
       >
         Set Offline
-      </button>
-      
-      <button 
-        data-testid="set-sync-status" 
-        onClick={() => dispatch({ 
-          type: 'SET_SYNC_STATUS', 
-          payload: 'syncing' 
-        })}
-      >
-        Set Sync Status
       </button>
     </div>
   );
@@ -282,16 +271,6 @@ describe('AppContext', () => {
     });
     
     expect(screen.getByTestId('online')).toHaveTextContent('false');
-  });
-
-  it('should handle SET_SYNC_STATUS action', () => {
-    renderWithProvider(<TestComponent />);
-    
-    act(() => {
-      screen.getByTestId('set-sync-status').click();
-    });
-    
-    expect(screen.getByTestId('sync-status')).toHaveTextContent('syncing');
   });
 
   it('should throw error when useAppContext is used outside provider', () => {

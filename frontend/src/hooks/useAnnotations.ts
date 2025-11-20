@@ -1,268 +1,110 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useDatabase } from './useDatabase';
+import { useAppContext } from '../contexts/AppContext';
+import { apiService } from '../services/api';
+import type { Annotation } from '../contexts/AppContext';
 
-export interface Annotation {
-  id: string;
-  documentId: string;
-  xPercent: number; // Percentage-based coordinate (0-100)
-  yPercent: number; // Percentage-based coordinate (0-100)
-  page: number; // Page number (1-based)
-  content: string;
-  createdAt: Date;
-  updatedAt: Date;
-  syncStatus: 'pending' | 'synced' | 'error';
+export interface UseAnnotationsReturn {
+  annotations: Annotation[];
+  isLoading: boolean;
+  error: string | null;
+  createAnnotation: (annotation: Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateAnnotation: (id: string, updates: Partial<Omit<Annotation, 'id' | 'documentId' | 'createdAt'>>) => Promise<void>;
+  deleteAnnotation: (id: string) => Promise<void>;
+  refreshAnnotations: (documentId: string) => Promise<void>;
 }
 
-export interface CreateAnnotationData {
-  documentId: string;
-  xPercent: number;
-  yPercent: number;
-  page: number;
-  content: string;
-}
-
-export const useAnnotations = (documentId?: string) => {
-  const { db } = useDatabase();
-  const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [loading, setLoading] = useState(false);
+export const useAnnotations = (documentId?: string): UseAnnotationsReturn => {
+  const { state, dispatch } = useAppContext();
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Generate unique ID for annotations
-  const generateId = useCallback(() => {
-    return `annotation_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }, []);
-
-  // Load annotations for a specific document
-  const loadAnnotations = useCallback(async (docId: string) => {
-    if (!db) return;
+  // Refresh annotations from server
+  const refreshAnnotations = useCallback(async (docId: string) => {
+    setIsLoading(true);
+    setError(null);
 
     try {
-      setLoading(true);
-      setError(null);
-      
-      const docAnnotations = await db.annotations
-        .where('documentId')
-        .equals(docId)
-        .toArray();
-      
-      // Sort by createdAt (newest first)
-      const sortedAnnotations = docAnnotations.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      setAnnotations(sortedAnnotations);
-    } catch (err) {
-      console.error('Error loading annotations:', err);
-      setError('Failed to load annotations');
+      const serverAnnotations = await apiService.getAnnotations(docId);
+      dispatch({ type: 'SET_ANNOTATIONS', payload: serverAnnotations });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load annotations';
+      setError(errorMessage);
+      console.error('Failed to refresh annotations:', error);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
-  }, [db]);
+  }, [dispatch]);
+
+  // Create annotation
+  const createAnnotation = useCallback(async (annotation: Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      const serverAnnotation = await apiService.createAnnotation(annotation);
+      dispatch({ type: 'ADD_ANNOTATION', payload: serverAnnotation });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create annotation';
+      setError(errorMessage);
+      throw error;
+    }
+  }, [dispatch]);
+
+  // Update annotation
+  const updateAnnotation = useCallback(async (id: string, updates: Partial<Omit<Annotation, 'id' | 'documentId' | 'createdAt'>>) => {
+    try {
+      const serverAnnotation = await apiService.updateAnnotation(id, updates);
+      dispatch({ type: 'UPDATE_ANNOTATION', payload: { id, updates: serverAnnotation } });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update annotation';
+      setError(errorMessage);
+      throw error;
+    }
+  }, [dispatch]);
+
+  // Delete annotation
+  const deleteAnnotation = useCallback(async (id: string) => {
+    try {
+      await apiService.deleteAnnotation(id);
+      dispatch({ type: 'DELETE_ANNOTATION', payload: id });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete annotation';
+      setError(errorMessage);
+      throw error;
+    }
+  }, [dispatch]);
 
   // Load annotations when documentId changes
   useEffect(() => {
     if (documentId) {
-      loadAnnotations(documentId);
-    } else {
-      setAnnotations([]);
+      refreshAnnotations(documentId);
     }
-  }, [documentId, loadAnnotations]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentId]);
 
-  // Create new annotation
-  const createAnnotation = useCallback(async (data: CreateAnnotationData): Promise<Annotation | null> => {
-    if (!db) {
-      setError('Database not available');
-      return null;
-    }
+  // Listen for online/offline events
+  useEffect(() => {
+    const handleOnline = () => {
+      dispatch({ type: 'SET_ONLINE_STATUS', payload: true });
+    };
 
-    try {
-      const now = Date.now();
-      const newAnnotation: Annotation = {
-        id: generateId(),
-        documentId: data.documentId,
-        xPercent: data.xPercent,
-        yPercent: data.yPercent,
-        page: data.page,
-        content: data.content,
-        createdAt: new Date(now),
-        updatedAt: new Date(now),
-        syncStatus: 'pending'
-      };
+    const handleOffline = () => {
+      dispatch({ type: 'SET_ONLINE_STATUS', payload: false });
+    };
 
-      await db.annotations.add(newAnnotation);
-      
-      // Update local state
-      setAnnotations(prev => [newAnnotation, ...prev]);
-      
-      return newAnnotation;
-    } catch (err) {
-      console.error('Error creating annotation:', err);
-      setError('Failed to create annotation');
-      return null;
-    }
-  }, [db, generateId]);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
 
-  // Update existing annotation
-  const updateAnnotation = useCallback(async (id: string, content: string): Promise<boolean> => {
-    if (!db) {
-      setError('Database not available');
-      return false;
-    }
-
-    try {
-      const now = Date.now();
-      await db.annotations.update(id, {
-        content,
-        updatedAt: new Date(now),
-        syncStatus: 'pending'
-      });
-
-      // Update local state
-      setAnnotations(prev => prev.map(annotation => 
-        annotation.id === id 
-          ? { ...annotation, content, updatedAt: new Date(now), syncStatus: 'pending' as const }
-          : annotation
-      ));
-
-      return true;
-    } catch (err) {
-      console.error('Error updating annotation:', err);
-      setError('Failed to update annotation');
-      return false;
-    }
-  }, [db]);
-
-  // Delete annotation
-  const deleteAnnotation = useCallback(async (id: string): Promise<boolean> => {
-    if (!db) {
-      setError('Database not available');
-      return false;
-    }
-
-    try {
-      await db.annotations.delete(id);
-      
-      // Update local state
-      setAnnotations(prev => prev.filter(annotation => annotation.id !== id));
-      
-      return true;
-    } catch (err) {
-      console.error('Error deleting annotation:', err);
-      setError('Failed to delete annotation');
-      return false;
-    }
-  }, [db]);
-
-  // Get annotations for a specific page
-  const getAnnotationsForPage = useCallback((page: number) => {
-    return annotations.filter(annotation => annotation.page === page);
-  }, [annotations]);
-
-  // Get annotation by ID
-  const getAnnotationById = useCallback((id: string) => {
-    return annotations.find(annotation => annotation.id === id);
-  }, [annotations]);
-
-  // Clear all annotations for current document
-  const clearAnnotations = useCallback(async (): Promise<boolean> => {
-    if (!db || !documentId) {
-      setError('Database or document ID not available');
-      return false;
-    }
-
-    try {
-      await db.annotations
-        .where('documentId')
-        .equals(documentId)
-        .delete();
-      
-      setAnnotations([]);
-      return true;
-    } catch (err) {
-      console.error('Error clearing annotations:', err);
-      setError('Failed to clear annotations');
-      return false;
-    }
-  }, [db, documentId]);
-
-  // Get annotations that need syncing
-  const getPendingAnnotations = useCallback(async (): Promise<Annotation[]> => {
-    if (!db) return [];
-
-    try {
-      return await db.annotations
-        .where('syncStatus')
-        .equals('pending')
-        .toArray();
-    } catch (err) {
-      console.error('Error getting pending annotations:', err);
-      return [];
-    }
-  }, [db]);
-
-  // Update sync status for annotation
-  const updateSyncStatus = useCallback(async (id: string, status: 'pending' | 'synced' | 'error'): Promise<boolean> => {
-    if (!db) return false;
-
-    try {
-      await db.annotations.update(id, { syncStatus: status });
-      
-      // Update local state
-      setAnnotations(prev => prev.map(annotation => 
-        annotation.id === id 
-          ? { ...annotation, syncStatus: status }
-          : annotation
-      ));
-
-      return true;
-    } catch (err) {
-      console.error('Error updating sync status:', err);
-      return false;
-    }
-  }, [db]);
-
-  // Bulk update annotations (for sync operations)
-  const bulkUpdateAnnotations = useCallback(async (updates: Partial<Annotation>[]): Promise<boolean> => {
-    if (!db) return false;
-
-    try {
-      await db.transaction('rw', db.annotations, async () => {
-        for (const update of updates) {
-          if (update.id) {
-            await db.annotations.update(update.id, update);
-          }
-        }
-      });
-
-      // Reload annotations to reflect changes
-      if (documentId) {
-        await loadAnnotations(documentId);
-      }
-
-      return true;
-    } catch (err) {
-      console.error('Error bulk updating annotations:', err);
-      setError('Failed to update annotations');
-      return false;
-    }
-  }, [db, documentId, loadAnnotations]);
-
-  // Clear error state
-  const clearError = useCallback(() => {
-    setError(null);
-  }, []);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [dispatch]);
 
   return {
-    annotations,
-    loading,
+    annotations: state.annotations,
+    isLoading,
     error,
     createAnnotation,
     updateAnnotation,
     deleteAnnotation,
-    getAnnotationsForPage,
-    getAnnotationById,
-    clearAnnotations,
-    getPendingAnnotations,
-    updateSyncStatus,
-    bulkUpdateAnnotations,
-    clearError,
-    refresh: () => documentId && loadAnnotations(documentId)
+    refreshAnnotations,
   };
 };
