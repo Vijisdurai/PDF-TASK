@@ -50,6 +50,10 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null);
+  const hasCenteredRef = useRef<string>(''); // Track which document has been centered
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [scrollStart, setScrollStart] = useState({ x: 0, y: 0 });
   const [state, setState] = useState<PDFViewerState>({
     pdfDocument: null,
     totalPages: 0,
@@ -182,6 +186,22 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
       try {
         await renderTask.promise;
         renderTaskRef.current = null;
+        
+        // Center scroll after render completes (only on first load of each document)
+        if (containerRef.current && hasCenteredRef.current !== documentUrl) {
+          hasCenteredRef.current = documentUrl;
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              if (containerRef.current) {
+                const container = containerRef.current;
+                const centerX = (container.scrollWidth - container.clientWidth) / 2;
+                const centerY = (container.scrollHeight - container.clientHeight) / 2;
+                container.scrollLeft = centerX;
+                container.scrollTop = centerY;
+              }
+            });
+          });
+        }
       } catch (error: any) {
         // Ignore cancellation errors, log others
         if (error?.name !== 'RenderingCancelledException') {
@@ -242,6 +262,40 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
     }
     // Otherwise, let the browser handle normal scrolling (both vertical and horizontal)
   }, [zoomScale, onZoomChange]);
+
+  // Drag scrolling handlers
+  const handleMouseDown = useCallback((event: React.MouseEvent) => {
+    if (event.button !== 0) return;
+    
+    const container = containerRef.current;
+    if (!container) return;
+    
+    setIsDragging(true);
+    setDragStart({ x: event.clientX, y: event.clientY });
+    setScrollStart({ x: container.scrollLeft, y: container.scrollTop });
+    event.preventDefault();
+  }, []);
+
+  const handleMouseMove = useCallback((event: React.MouseEvent) => {
+    if (!isDragging) return;
+    
+    const container = containerRef.current;
+    if (!container) return;
+    
+    const deltaX = event.clientX - dragStart.x;
+    const deltaY = event.clientY - dragStart.y;
+    
+    container.scrollLeft = scrollStart.x - deltaX;
+    container.scrollTop = scrollStart.y - deltaY;
+  }, [isDragging, dragStart, scrollStart]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setIsDragging(false);
+  }, []);
 
 
 
@@ -343,13 +397,18 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
       <div
         ref={containerRef}
         className="flex-1 overflow-auto bg-navy-800 scroll-smooth"
+        style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
         onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
       >
         <div className="p-4 min-h-full" style={{ 
           display: 'flex', 
           // Account for padding (16px * 2 = 32px) when comparing dimensions
-          alignItems: documentDimensions.height > (containerDimensions.height - 32) ? 'flex-start' : 'center',
-          justifyContent: documentDimensions.width > (containerDimensions.width - 32) ? 'flex-start' : 'center'
+              alignItems: 'center',
+              justifyContent: 'center',
         }}>
           <div className="relative">
             <canvas

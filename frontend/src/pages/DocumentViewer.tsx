@@ -197,9 +197,9 @@ const DocumentViewerPage: React.FC = () => {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {/* Main viewer area - scrollable */}
+      {/* Main viewer area - no scroll, DocumentViewer handles its own scrolling */}
       <div 
-        className="flex-1 bg-navy-800 border-r border-navy-700 overflow-auto"
+        className="flex-1 bg-navy-800 border-r border-navy-700 overflow-hidden"
         style={{ marginRight: state.isNotePanelOpen ? '320px' : '0' }}
       >
         <DocumentViewer
@@ -207,8 +207,6 @@ const DocumentViewerPage: React.FC = () => {
           documentUrl={documentUrl}
           mimeType={effectiveMimeType}
           filename={effectiveFilename}
-          onAnnotationCreate={handleAnnotationCreate}
-          annotations={overlayAnnotations}
           onAnnotationClick={handleAnnotationClick}
         />
       </div>

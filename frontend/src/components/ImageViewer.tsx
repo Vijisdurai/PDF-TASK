@@ -291,6 +291,18 @@ export default function ImageViewer({
       // sync both internal and external on init
       setInternalZoom(s);
       onZoomChange?.(s);
+
+      // Center scroll position using requestAnimationFrame to ensure layout is complete
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (outer) {
+            const centerX = (outer.scrollWidth - outer.clientWidth) / 2;
+            const centerY = (outer.scrollHeight - outer.clientHeight) / 2;
+            outer.scrollLeft = centerX;
+            outer.scrollTop = centerY;
+          }
+        });
+      });
     };
 
     img.onerror = () => {
@@ -323,6 +335,26 @@ export default function ImageViewer({
     ro.observe(outer);
     return () => ro.disconnect();
   }, [imgNatural, scale, fitScale, onZoomChange]);
+
+  /* --------------------------
+     Center scroll when scale changes to fit scale
+     -------------------------- */
+  useEffect(() => {
+    const outer = outerRef.current;
+    if (!outer || imgNatural.w === 1) return;
+
+    // Only center when at fit scale (reset view)
+    if (Math.abs(scale - fitScale) < 0.01) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const centerX = (outer.scrollWidth - outer.clientWidth) / 2;
+          const centerY = (outer.scrollHeight - outer.clientHeight) / 2;
+          outer.scrollLeft = centerX;
+          outer.scrollTop = centerY;
+        });
+      });
+    }
+  }, [scale, fitScale, imgNatural.w]);
 
   /* --------------------------
      Wheel zoom
