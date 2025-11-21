@@ -76,12 +76,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
     });
   }, [dispatch]);
 
-  const handlePanChange = useCallback((offset: { x: number; y: number }) => {
-    dispatch({
-      type: 'SET_VIEWER_STATE',
-      payload: { panOffset: offset }
-    });
-  }, [dispatch]);
+
 
   const handleDocumentLoad = useCallback((totalPages?: number) => {
     dispatch({
@@ -216,8 +211,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
   const handleResetZoom = useCallback(() => {
     handleZoomChange(1);
-    handlePanChange({ x: 0, y: 0 });
-  }, [handleZoomChange, handlePanChange]);
+  }, [handleZoomChange]);
 
   // DOCX page navigation
   const handleDocxPrevPage = useCallback(() => {
@@ -242,10 +236,8 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
             documentId={documentId}
             currentPage={viewerState.currentPage}
             zoomScale={viewerState.zoomScale}
-            panOffset={viewerState.panOffset}
             onPageChange={handlePageChange}
             onZoomChange={handleZoomChange}
-            onPanChange={handlePanChange}
             onDocumentLoad={handleDocumentLoad}
             onAnnotationCreate={handleAnnotationCreate}
             onAnnotationUpdate={handleAnnotationUpdate}

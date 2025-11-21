@@ -40,6 +40,8 @@
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 7.1, 7.2, 7.3_
 
 - [x] 5. Create EditAnnotationModal component
+
+
   - Create EditAnnotationModal.tsx with modal overlay and backdrop
   - Add text area for editing annotation content
   - Add color picker input for changing marker color

@@ -280,8 +280,9 @@ export default function ImageViewer({
       const outer = outerRef.current;
       if (!outer) return;
 
-      const vw = outer.clientWidth;
-      const vh = outer.clientHeight;
+      // Subtract padding (32px total) to get actual available space
+      const vw = outer.clientWidth - 32;
+      const vh = outer.clientHeight - 32;
       setViewport({ w: vw, h: vh });
 
       const s = Math.min(vw / img.naturalWidth, vh / img.naturalHeight);
@@ -305,8 +306,9 @@ export default function ImageViewer({
     if (!outer) return;
 
     const ro = new ResizeObserver(() => {
-      const vw = outer.clientWidth;
-      const vh = outer.clientHeight;
+      // Subtract padding (32px total) to get actual available space
+      const vw = outer.clientWidth - 32;
+      const vh = outer.clientHeight - 32;
       setViewport({ w: vw, h: vh });
       const s = Math.min(vw / imgNatural.w, vh / imgNatural.h);
       setFitScale(s);
@@ -326,8 +328,10 @@ export default function ImageViewer({
      Wheel zoom
      -------------------------- */
   const onWheel = (e: React.WheelEvent) => {
+    // Only handle Ctrl/Cmd + scroll for zooming
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
+      e.stopPropagation();
       
       // Smoother zoom with smaller increments
       const delta = -e.deltaY;
@@ -335,6 +339,7 @@ export default function ImageViewer({
       
       setZoomAndSync(scale * factor);
     }
+    // Otherwise, let the browser handle normal scrolling (both vertical and horizontal)
   };
 
   /* --------------------------
@@ -495,17 +500,30 @@ export default function ImageViewer({
       {/* OUTER VIEWPORT */}
       <div
         ref={outerRef}
-        className="w-full h-full relative overflow-auto bg-navy-800"
+        className="w-full h-full relative overflow-auto bg-navy-800 scroll-smooth"
         onWheel={onWheel}
         onDoubleClick={onDoubleClick}
       >
         {/* IMAGE CONTAINER WRAPPER */}
-        <div className="min-w-full min-h-full flex items-start justify-center p-4">
+        <div className="p-4 min-h-full" style={{
+          display: 'flex',
+          // viewport already has padding subtracted
+          alignItems: (imgNatural.h * scale) > viewport.h ? 'flex-start' : 'center',
+          justifyContent: (imgNatural.w * scale) > viewport.w ? 'flex-start' : 'center'
+        }}>
           <div
             ref={workspaceRef}
             style={{
               transform: `scale(${scale})`,
-              transformOrigin: "top center",
+              transformOrigin: (() => {
+                // viewport already has padding subtracted
+                const overflowsWidth = (imgNatural.w * scale) > viewport.w;
+                const overflowsHeight = (imgNatural.h * scale) > viewport.h;
+                if (overflowsWidth && overflowsHeight) return "top left";
+                if (overflowsWidth) return "center left";
+                if (overflowsHeight) return "top center";
+                return "center";
+              })(),
               transition: "transform 0.1s ease-out",
             }}
           >

@@ -154,15 +154,16 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
       // Calculate viewport with zoom
       const viewport = page.getViewport({ scale: zoomScale });
       
-      // Store base size (at scale=1) for fit calculations
+      // Store base size (at scale=1) for fit calculations and annotations
       const baseViewport = page.getViewport({ scale: 1 });
       setBaseDocumentSize({ width: baseViewport.width, height: baseViewport.height });
 
-      // Set canvas dimensions
+      // Set canvas dimensions to scaled size
       canvas.width = viewport.width;
       canvas.height = viewport.height;
 
-      // Update document dimensions for annotation overlay
+      // Update document dimensions for annotation overlay - use SCALED dimensions
+      // so annotations scale with the canvas
       setDocumentDimensions({ width: viewport.width, height: viewport.height });
 
       // Clear canvas
@@ -226,9 +227,10 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
 
   // Handle mouse wheel for zoom (Ctrl+scroll)
   const handleWheel = useCallback((event: React.WheelEvent) => {
-    // Ctrl/Cmd + scroll = zoom from center
+    // Only handle Ctrl/Cmd + scroll for zooming
     if (event.ctrlKey || event.metaKey) {
       event.preventDefault();
+      event.stopPropagation();
       
       const delta = event.deltaY > 0 ? -0.1 : 0.1;
       const prevScale = zoomScale;
@@ -238,6 +240,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
       
       onZoomChange(newScale);
     }
+    // Otherwise, let the browser handle normal scrolling (both vertical and horizontal)
   }, [zoomScale, onZoomChange]);
 
 
@@ -339,39 +342,46 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
       {/* Canvas container */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-auto bg-navy-800 relative"
+        className="flex-1 overflow-auto bg-navy-800 scroll-smooth"
         onWheel={handleWheel}
       >
-        <div className="inline-block min-w-full min-h-full flex items-start justify-center p-4">
-          <canvas
-            ref={canvasRef}
-            className="shadow-lg border border-navy-600"
-            style={{ display: 'block' }}
-          />
-
-          {/* Annotation Overlay */}
-          {onAnnotationCreate && documentDimensions.width > 0 && (
-            <AnnotationOverlay
-              annotations={annotations}
-              documentType="pdf"
-              currentPage={currentPage}
-              containerWidth={containerDimensions.width}
-              containerHeight={containerDimensions.height}
-              documentWidth={documentDimensions.width}
-              documentHeight={documentDimensions.height}
-              onAnnotationClick={(id) => {
-                const annotation = annotations.find(a => a.id === id);
-                if (annotation && onAnnotationClick) {
-                  onAnnotationClick(annotation);
-                }
-              }}
-              onCreateAnnotation={(x, y, content) => {
-                if (onAnnotationCreate) {
-                  onAnnotationCreate(x, y, content);
-                }
-              }}
+        <div className="p-4 min-h-full" style={{ 
+          display: 'flex', 
+          // Account for padding (16px * 2 = 32px) when comparing dimensions
+          alignItems: documentDimensions.height > (containerDimensions.height - 32) ? 'flex-start' : 'center',
+          justifyContent: documentDimensions.width > (containerDimensions.width - 32) ? 'flex-start' : 'center'
+        }}>
+          <div className="relative">
+            <canvas
+              ref={canvasRef}
+              className="shadow-lg border border-navy-600"
+              style={{ display: 'block' }}
             />
-          )}
+
+            {/* Annotation Overlay */}
+            {onAnnotationCreate && documentDimensions.width > 0 && (
+              <AnnotationOverlay
+                annotations={annotations}
+                documentType="pdf"
+                currentPage={currentPage}
+                containerWidth={containerDimensions.width}
+                containerHeight={containerDimensions.height}
+                documentWidth={documentDimensions.width}
+                documentHeight={documentDimensions.height}
+                onAnnotationClick={(id) => {
+                  const annotation = annotations.find(a => a.id === id);
+                  if (annotation && onAnnotationClick) {
+                    onAnnotationClick(annotation);
+                  }
+                }}
+                onCreateAnnotation={(x, y, content) => {
+                  if (onAnnotationCreate) {
+                    onAnnotationCreate(x, y, content);
+                  }
+                }}
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>

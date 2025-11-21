@@ -33,7 +33,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         <Header />
         
         {/* Main content area */}
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto scroll-smooth">
           {children}
         </main>
 

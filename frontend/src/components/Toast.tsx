@@ -7,14 +7,14 @@ export interface ToastProps {
   onClose?: () => void;
 }
 
-const Toast: React.FC<ToastProps> = ({ message, type, duration = 3000, onClose }) => {
+const Toast: React.FC<ToastProps> = ({ message, type, duration = 1500, onClose }) => {
   const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsVisible(false);
       if (onClose) {
-        setTimeout(onClose, 300); // Wait for fade out animation
+        setTimeout(onClose, 200); // Faster fade out
       }
     }, duration);
 
@@ -24,14 +24,14 @@ const Toast: React.FC<ToastProps> = ({ message, type, duration = 3000, onClose }
   const getTypeStyles = () => {
     switch (type) {
       case 'success':
-        return 'bg-green-600 border-green-500';
+        return 'bg-green-600/95 border-green-500/50';
       case 'error':
-        return 'bg-red-600 border-red-500';
+        return 'bg-red-600/95 border-red-500/50';
       case 'warning':
-        return 'bg-yellow-600 border-yellow-500';
+        return 'bg-yellow-600/95 border-yellow-500/50';
       case 'info':
       default:
-        return 'bg-ocean-600 border-ocean-500';
+        return 'bg-ocean-600/95 border-ocean-500/50';
     }
   };
 

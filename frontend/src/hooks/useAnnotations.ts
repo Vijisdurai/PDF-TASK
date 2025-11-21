@@ -160,7 +160,7 @@ export const useAnnotations = (documentId?: string): UseAnnotationsReturn => {
   // Create annotation with optimistic UI update
   const createAnnotation = useCallback(async (annotation: Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>) => {
     // Generate temporary ID for optimistic update
-    const tempId = crypto.randomUUID();
+    const tempId = `temp-${crypto.randomUUID()}`;
     const now = new Date();
     
     const optimisticAnnotation: Annotation = {
@@ -174,7 +174,7 @@ export const useAnnotations = (documentId?: string): UseAnnotationsReturn => {
     dispatch({ type: 'ADD_ANNOTATION', payload: optimisticAnnotation });
 
     try {
-      // Save to IndexedDB immediately
+      // Save to IndexedDB immediately with temp ID
       await DatabaseService.addAnnotation(optimisticAnnotation);
 
       // Try to sync with backend if online
@@ -184,11 +184,13 @@ export const useAnnotations = (documentId?: string): UseAnnotationsReturn => {
             apiService.createAnnotation(annotation)
           );
           
-          // Replace optimistic annotation with server response
+          // First, remove the optimistic annotation from state
           dispatch({ type: 'DELETE_ANNOTATION', payload: tempId });
+          
+          // Then add the server annotation
           dispatch({ type: 'ADD_ANNOTATION', payload: serverAnnotation });
           
-          // Update IndexedDB with server ID
+          // Update IndexedDB: delete temp, add server version
           await DatabaseService.deleteAnnotation(tempId);
           await DatabaseService.addAnnotation(serverAnnotation);
           await DatabaseService.markAnnotationSynced(serverAnnotation.id);

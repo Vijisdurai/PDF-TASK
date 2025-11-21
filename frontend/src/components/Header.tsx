@@ -75,7 +75,7 @@ const Header: React.FC = () => {
 
   return (
     <header 
-      className="bg-navy-800/80 backdrop-blur-md border-b border-white/10 px-4 py-3 transition-all"
+      className="sticky top-0 z-50 bg-navy-800/80 backdrop-blur-md border-b border-white/10 px-4 py-3 transition-all"
       style={{ marginRight: isDocumentViewer && state.isNotePanelOpen ? '320px' : '0' }}
     >
       {isDocumentViewer && state.currentDocument ? (

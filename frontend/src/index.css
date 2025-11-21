@@ -15,10 +15,16 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  
+  scroll-behavior: smooth;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
@@ -98,6 +104,14 @@ button:focus-visible {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #627d98;
+}
+
+/* Ensure smooth scrolling for overflow containers */
+.overflow-auto,
+.overflow-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #486581 #243b53;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Smooth animations */
