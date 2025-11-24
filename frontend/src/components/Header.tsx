@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
@@ -9,6 +9,17 @@ const Header: React.FC = () => {
   const navigate = useNavigate();
 
   const isDocumentViewer = location.pathname.startsWith('/document/');
+
+  // Determine if current document is an image (hide page navigation for images)
+  const isImageDocument = useMemo(() => {
+    if (!state.currentDocument) return false;
+    
+    const mimeType = state.currentDocument.convertedPath 
+      ? 'application/pdf' 
+      : state.currentDocument.mimeType;
+    
+    return mimeType.startsWith('image/');
+  }, [state.currentDocument]);
 
   const handleBackToLibrary = () => {
     dispatch({ type: 'SET_CURRENT_DOCUMENT', payload: null });
@@ -80,28 +91,33 @@ const Header: React.FC = () => {
             </span>
           </div>
 
-          {/* Center: Page navigation */}
-          <div className="flex items-center space-x-3 flex-1 justify-center">
-            <button
-              onClick={handlePrevPage}
-              disabled={state.viewerState.currentPage <= 1}
-              className="p-2 bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all text-off-white disabled:opacity-30 disabled:cursor-not-allowed border border-white/10 hover:border-white/20"
-              title="Previous page"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <span className="text-off-white text-sm min-w-[60px] text-center font-medium">
-              {state.viewerState.currentPage} / {state.viewerState.totalPages || '?'}
-            </span>
-            <button
-              onClick={handleNextPage}
-              disabled={!!(state.viewerState.totalPages && state.viewerState.currentPage >= state.viewerState.totalPages)}
-              className="p-2 bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all text-off-white disabled:opacity-30 disabled:cursor-not-allowed border border-white/10 hover:border-white/20"
-              title="Next page"
-            >
-              <ChevronRight size={18} />
-            </button>
-          </div>
+          {/* Center: Page navigation (hidden for image documents) */}
+          {!isImageDocument && (
+            <div className="flex items-center space-x-3 flex-1 justify-center">
+              <button
+                onClick={handlePrevPage}
+                disabled={state.viewerState.currentPage <= 1}
+                className="p-2 bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all text-off-white disabled:opacity-30 disabled:cursor-not-allowed border border-white/10 hover:border-white/20"
+                title="Previous page"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <span className="text-off-white text-sm min-w-[60px] text-center font-medium">
+                {state.viewerState.currentPage} / {state.viewerState.totalPages || '?'}
+              </span>
+              <button
+                onClick={handleNextPage}
+                disabled={!!(state.viewerState.totalPages && state.viewerState.currentPage >= state.viewerState.totalPages)}
+                className="p-2 bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all text-off-white disabled:opacity-30 disabled:cursor-not-allowed border border-white/10 hover:border-white/20"
+                title="Next page"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          )}
+
+          {/* Center spacer for image documents */}
+          {isImageDocument && <div className="flex-1" />}
 
           {/* Right: Zoom controls */}
           <div className="flex items-center space-x-3 flex-1 justify-end">

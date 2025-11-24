@@ -257,19 +257,26 @@ export default function ImageViewer({
 
   /* --------------------------
      Calculate pan bounds for a given scale
+     Windows Photos style: No gaps allowed, image fills viewport completely
+     Uses transform-based positioning for precise control
      -------------------------- */
   const getPanBounds = useCallback((zoomScale: number) => {
     const outer = outerRef.current;
-    if (!outer) return { minX: 0, maxX: 0, minY: 0, maxY: 0, allowPanX: false, allowPanY: false };
+    if (!outer || imgNatural.w <= 1 || imgNatural.h <= 1) {
+      return { minX: 0, maxX: 0, minY: 0, maxY: 0, allowPanX: false, allowPanY: false };
+    }
 
-    const viewportWidth = outer.clientWidth;
-    const viewportHeight = outer.clientHeight;
+    const viewportWidth = outer.clientWidth || 1;
+    const viewportHeight = outer.clientHeight || 1;
     const scaledWidth = imgNatural.w * zoomScale;
     const scaledHeight = imgNatural.h * zoomScale;
 
+    // Determine if panning is allowed in each direction
     const allowPanX = scaledWidth > viewportWidth;
     const allowPanY = scaledHeight > viewportHeight;
 
+    // Calculate maximum pan distance in scaled image coordinates
+    // This ensures the image edges never move inside the viewport
     const maxPanX = allowPanX ? (scaledWidth - viewportWidth) / 2 : 0;
     const maxPanY = allowPanY ? (scaledHeight - viewportHeight) / 2 : 0;
 
@@ -285,12 +292,20 @@ export default function ImageViewer({
 
   /* --------------------------
      Clamp pan offset to bounds
+     Ensures no gaps appear by strictly enforcing boundaries
      -------------------------- */
   const clampPanOffset = useCallback((pan: { x: number; y: number }, zoomScale: number) => {
     const bounds = getPanBounds(zoomScale);
+    
+    // Strict clamping to prevent any gaps
+    const clampedX = bounds.allowPanX ? 
+      Math.max(bounds.minX, Math.min(bounds.maxX, pan.x)) : 0;
+    const clampedY = bounds.allowPanY ? 
+      Math.max(bounds.minY, Math.min(bounds.maxY, pan.y)) : 0;
+
     return {
-      x: bounds.allowPanX ? Math.max(bounds.minX, Math.min(bounds.maxX, pan.x)) : 0,
-      y: bounds.allowPanY ? Math.max(bounds.minY, Math.min(bounds.maxY, pan.y)) : 0
+      x: isFinite(clampedX) ? clampedX : 0,
+      y: isFinite(clampedY) ? clampedY : 0
     };
   }, [getPanBounds]);
 
@@ -330,7 +345,7 @@ export default function ImageViewer({
         onZoomChange?.(fitScale);
         setPanOffset({ x: 0, y: 0 });
         setIsFitMode(true);
-        setTimeout(() => setInstantTransition(false), 0);
+        requestAnimationFrame(() => setInstantTransition(false));
         return;
       }
 
@@ -343,7 +358,7 @@ export default function ImageViewer({
         setInternalZoom(newScale);
         onZoomChange?.(newScale);
         setPanOffset({ x: 0, y: 0 });
-        setTimeout(() => setInstantTransition(false), 0);
+        requestAnimationFrame(() => setInstantTransition(false));
         return;
       }
 
@@ -363,12 +378,11 @@ export default function ImageViewer({
       }
 
       // Calculate which image point is currently at the anchor
-      // panOffset is in screen pixels: imagePoint = (anchorScreen - panOffset) / currentScale
-      const imagePointX = (anchorScreenX - panOffset.x) / scale;
-      const imagePointY = (anchorScreenY - panOffset.y) / scale;
+      // With transform-based positioning, we need to account for the current transform
+      const imagePointX = anchorScreenX / scale - panOffset.x / scale;
+      const imagePointY = anchorScreenY / scale - panOffset.y / scale;
 
       // Calculate new pan offset to keep the same image point at the anchor
-      // newPanOffset = anchorScreen - imagePoint * newScale
       const newPan = {
         x: anchorScreenX - imagePointX * newScale,
         y: anchorScreenY - imagePointY * newScale
@@ -389,69 +403,95 @@ export default function ImageViewer({
      Handle external zoom changes (from header controls)
      -------------------------- */
   useEffect(() => {
-    if (typeof propZoom === "number") {
+    if (typeof propZoom === "number" && imgNatural.w > 1) {
       // Check for fit mode signal (-1)
       if (propZoom === -1) {
         // Apply fit scale
         if (fitScale > 0) {
           setZoomAndSync(fitScale);
         }
-      } else if (propZoom !== scale) {
+      } else if (propZoom !== scale && propZoom > 0) {
         // External zoom changed - apply it through our zoom function
         setZoomAndSync(propZoom);
       }
     }
-  }, [propZoom, scale, fitScale, setZoomAndSync]);
+  }, [propZoom, scale, fitScale, setZoomAndSync, imgNatural.w]);
 
   /* --------------------------
      Image load: set fit scale and initial view
+     Fit scale ensures image fills viewport without cropping
      -------------------------- */
   useEffect(() => {
+    // Reset state when URL changes
+    setImgNatural({ w: 1, h: 1 });
+    setFitScale(1);
+    setInternalZoom(1);
+    setPanOffset({ x: 0, y: 0 });
+    setIsFitMode(true);
+
     const img = new Image();
     img.src = documentUrl;
     img.onload = () => {
-      setImgNatural({ w: img.naturalWidth, h: img.naturalHeight });
+      // Ensure we have valid dimensions
+      const naturalWidth = img.naturalWidth || 1;
+      const naturalHeight = img.naturalHeight || 1;
+      
+      setImgNatural({ w: naturalWidth, h: naturalHeight });
 
-      const outer = outerRef.current;
-      if (!outer) return;
+      // Wait for next frame to ensure viewport is ready
+      requestAnimationFrame(() => {
+        const outer = outerRef.current;
+        if (!outer) return;
 
-      const vw = outer.clientWidth;
-      const vh = outer.clientHeight;
+        const vw = outer.clientWidth || 1;
+        const vh = outer.clientHeight || 1;
 
-      const s = Math.min(vw / img.naturalWidth, vh / img.naturalHeight);
-      setFitScale(s);
+        // Calculate fit scale to show entire image without gaps
+        const s = Math.min(vw / naturalWidth, vh / naturalHeight);
+        setFitScale(s);
 
-      // sync both internal and external on init
-      setInternalZoom(s);
-      onZoomChange?.(s);
-      setIsFitMode(true);
+        // Initialize at fit scale, centered with no pan offset
+        setInternalZoom(s);
+        onZoomChange?.(s);
+        setPanOffset({ x: 0, y: 0 });
+        setIsFitMode(true);
+      });
     };
 
     img.onerror = () => {
-      // graceful fallback
+      console.warn('Failed to load image:', documentUrl);
+      // Set fallback dimensions
+      setImgNatural({ w: 800, h: 600 });
     };
   }, [documentUrl, onZoomChange]);
 
   /* --------------------------
      Resize observer: recalc fit scale and adjust if needed
+     Ensures proper bounds when viewport size changes
      -------------------------- */
   useEffect(() => {
     const outer = outerRef.current;
-    if (!outer) return;
+    if (!outer || imgNatural.w <= 1) return;
 
-    const ro = new ResizeObserver(() => {
-      const vw = outer.clientWidth;
-      const vh = outer.clientHeight;
+    const ro = new ResizeObserver((entries) => {
+      // Use ResizeObserver entry for more accurate dimensions
+      const entry = entries[0];
+      if (!entry) return;
+
+      const vw = entry.contentRect.width || 1;
+      const vh = entry.contentRect.height || 1;
+      
+      // Recalculate fit scale without padding to prevent gaps
       const s = Math.min(vw / imgNatural.w, vh / imgNatural.h);
       setFitScale(s);
 
-      // If currently in fit mode, update to new fit scale
+      // If currently in fit mode, update to new fit scale and center
       if (isFitMode) {
         setInternalZoom(s);
         onZoomChange?.(s);
         setPanOffset({ x: 0, y: 0 });
       } else {
-        // Reclamp pan offset to new bounds
+        // Reclamp pan offset to new bounds to prevent gaps
         setPanOffset(prev => clampPanOffset(prev, scale));
       }
     });
@@ -520,6 +560,7 @@ export default function ImageViewer({
 
   /* --------------------------
      Drag panning handlers (Windows Photos style - no scrollbars)
+     Prevents any gaps from appearing during pan
      -------------------------- */
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     // Only pan with left mouse button and when not clicking on annotation
@@ -540,15 +581,19 @@ export default function ImageViewer({
     const deltaX = e.clientX - dragStart.x;
     const deltaY = e.clientY - dragStart.y;
 
-    setPanOffset(prev => {
-      const newPan = {
-        x: prev.x + deltaX,
-        y: prev.y + deltaY
-      };
-      return clampPanOffset(newPan, scale);
-    });
+    // Only update if there's actual movement
+    if (Math.abs(deltaX) > 0 || Math.abs(deltaY) > 0) {
+      setPanOffset(prev => {
+        const newPan = {
+          x: prev.x + deltaX,
+          y: prev.y + deltaY
+        };
+        // Always clamp to prevent gaps
+        return clampPanOffset(newPan, scale);
+      });
 
-    setDragStart({ x: e.clientX, y: e.clientY });
+      setDragStart({ x: e.clientX, y: e.clientY });
+    }
   }, [isDragging, dragStart, clampPanOffset, scale]);
 
   const handleMouseUp = useCallback(() => {
@@ -690,7 +735,7 @@ export default function ImageViewer({
         flexDirection: 'column',
       }}
     >
-      {/* OUTER VIEWPORT - Microsoft Photos style container with fixed viewport */}
+      {/* OUTER VIEWPORT - Windows Photos style container with fixed viewport */}
       <div
         ref={outerRef}
         className="w-full h-full bg-navy-800"
@@ -707,7 +752,7 @@ export default function ImageViewer({
         onClick={handleImageClick}
         onContextMenu={(e) => e.preventDefault()}
       >
-        {/* WRAPPER - provides centering */}
+        {/* WRAPPER - provides centering and contains scaled image */}
         <div
           style={{
             width: '100%',
@@ -719,19 +764,21 @@ export default function ImageViewer({
             position: 'relative',
           }}
         >
-          {/* IMAGE WRAPPER - scales and pans the image */}
+          {/* IMAGE WRAPPER - scales and pans the image, anchored to center */}
           <div
             ref={workspaceRef}
             style={{
-              position: 'relative',
+              position: 'absolute',
               width: imgNatural.w,
               height: imgNatural.h,
-              transform: `scale(${scale})`,
+              transform: `scale(${scale}) translate(${panOffset.x / scale}px, ${panOffset.y / scale}px)`,
               transformOrigin: 'center center',
-              transition: (isDragging || instantTransition) ? 'none' : 'transform 0.2s ease-out, left 0.2s ease-out, top 0.2s ease-out',
-              maxWidth: 'none',
-              left: `${panOffset.x}px`,
-              top: `${panOffset.y}px`,
+              transition: (isDragging || instantTransition) ? 'none' : 'transform 0.2s ease-out',
+              willChange: isDragging ? 'transform' : 'auto',
+              left: '50%',
+              top: '50%',
+              marginLeft: `${-imgNatural.w / 2}px`,
+              marginTop: `${-imgNatural.h / 2}px`,
             }}
           >
             {/* IMAGE LAYER */}
@@ -745,6 +792,7 @@ export default function ImageViewer({
                 height: '100%',
                 display: 'block',
                 userSelect: 'none',
+                pointerEvents: 'none',
               }}
             />
 
