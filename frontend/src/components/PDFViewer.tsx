@@ -35,15 +35,12 @@ interface PDFViewerState {
 
 const PDFViewer: React.FC<PDFViewerProps> = ({
   documentUrl,
-  documentId,
   currentPage,
   zoomScale,
   onPageChange,
   onZoomChange,
   onDocumentLoad,
   onAnnotationCreate,
-  onAnnotationUpdate,
-  onAnnotationDelete,
   annotations = [],
   onAnnotationClick
 }) => {
@@ -151,13 +148,14 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
 
       const page = await state.pdfDocument.getPage(currentPage);
       const canvas = canvasRef.current;
-      const context = canvas.getContext('2d');
+      if (!canvas) return;
 
+      const context = canvas.getContext('2d', { willReadFrequently: true });
       if (!context) return;
 
       // Calculate viewport with zoom
       const viewport = page.getViewport({ scale: zoomScale });
-      
+
       // Store base size (at scale=1) for fit calculations and annotations
       const baseViewport = page.getViewport({ scale: 1 });
       setBaseDocumentSize({ width: baseViewport.width, height: baseViewport.height });
@@ -186,7 +184,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
       try {
         await renderTask.promise;
         renderTaskRef.current = null;
-        
+
         // Center scroll after render completes (only on first load of each document)
         if (containerRef.current && hasCenteredRef.current !== documentUrl) {
           hasCenteredRef.current = documentUrl;
@@ -212,7 +210,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
     } catch (error) {
       console.error('Error setting up page render:', error);
     }
-  }, [state.pdfDocument, currentPage, zoomScale]);
+  }, [state.pdfDocument, currentPage, zoomScale, documentUrl]);
 
   // Re-render when page, zoom, or document changes
   useEffect(() => {
@@ -251,13 +249,13 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
     if (event.ctrlKey || event.metaKey) {
       event.preventDefault();
       event.stopPropagation();
-      
+
       const delta = event.deltaY > 0 ? -0.1 : 0.1;
       const prevScale = zoomScale;
       const newScale = Math.max(0.25, Math.min(3, prevScale + delta));
-      
+
       if (newScale === prevScale) return;
-      
+
       onZoomChange(newScale);
     }
     // Otherwise, let the browser handle normal scrolling (both vertical and horizontal)
@@ -266,10 +264,10 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
   // Drag scrolling handlers
   const handleMouseDown = useCallback((event: React.MouseEvent) => {
     if (event.button !== 0) return;
-    
+
     const container = containerRef.current;
     if (!container) return;
-    
+
     setIsDragging(true);
     setDragStart({ x: event.clientX, y: event.clientY });
     setScrollStart({ x: container.scrollLeft, y: container.scrollTop });
@@ -278,13 +276,13 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
 
   const handleMouseMove = useCallback((event: React.MouseEvent) => {
     if (!isDragging) return;
-    
+
     const container = containerRef.current;
     if (!container) return;
-    
+
     const deltaX = event.clientX - dragStart.x;
     const deltaY = event.clientY - dragStart.y;
-    
+
     container.scrollLeft = scrollStart.x - deltaX;
     container.scrollTop = scrollStart.y - deltaY;
   }, [isDragging, dragStart, scrollStart]);
@@ -300,74 +298,35 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
 
 
   // Navigation functions
-  const goToPreviousPage = () => {
-    if (currentPage > 1) {
-      onPageChange(currentPage - 1);
-    }
-  };
 
-  const goToNextPage = () => {
-    if (currentPage < state.totalPages) {
-      onPageChange(currentPage + 1);
-    }
-  };
 
-  const handleZoomIn = useCallback(() => {
-    const newScale = Math.min(3, zoomScale + 0.25);
-    if (newScale !== zoomScale) {
-      onZoomChange(newScale);
-    }
-  }, [zoomScale, onZoomChange]);
 
-  const handleZoomOut = useCallback(() => {
-    const newScale = Math.max(0.25, zoomScale - 0.25);
-    if (newScale !== zoomScale) {
-      onZoomChange(newScale);
-    }
-  }, [zoomScale, onZoomChange]);
 
-  const handleResetView = useCallback(() => {
-    onZoomChange(1);
-  }, [onZoomChange]);
 
   // Fit to width - scales document to fit viewport width
-  const handleFitToWidth = useCallback(() => {
-    if (baseDocumentSize.width === 0 || !containerRef.current) return;
-    
-    const containerWidth = containerRef.current.offsetWidth;
-    const padding = 40;
-    const availableWidth = containerWidth - padding;
-    
-    const fitScale = Math.min(availableWidth / baseDocumentSize.width, 3);
-    
-    if (fitScale > 0) {
-      onZoomChange(fitScale);
-    }
-  }, [baseDocumentSize, onZoomChange]);
 
   // Fit to page - scales document to fit entire page in viewport
   const handleFitToPage = useCallback(() => {
     if (baseDocumentSize.width === 0 || baseDocumentSize.height === 0 || !containerRef.current) return;
-    
+
     const containerWidth = containerRef.current.offsetWidth;
     const containerHeight = containerRef.current.offsetHeight;
     const padding = 40;
     const availableWidth = containerWidth - padding;
     const availableHeight = containerHeight - padding;
-    
+
     const scaleX = availableWidth / baseDocumentSize.width;
     const scaleY = availableHeight / baseDocumentSize.height;
-    
+
     // Use the smaller scale to ensure entire page fits
     const fitScale = Math.min(scaleX, scaleY, 3);
-    
+
     if (fitScale > 0) {
       onZoomChange(fitScale);
     }
   }, [baseDocumentSize, onZoomChange]);
 
   // Legacy fit-to-screen (alias for fit-to-page)
-  const handleFitToScreen = handleFitToPage;
 
   if (state.isLoading) {
     return (
@@ -404,13 +363,11 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
       >
-        <div className="p-4 min-h-full" style={{ 
-          display: 'flex', 
-          // Account for padding (16px * 2 = 32px) when comparing dimensions
-              alignItems: 'center',
-              justifyContent: 'center',
+        <div className="p-4 min-h-full min-w-full" style={{
+          display: 'flex',
+          width: 'fit-content'
         }}>
-          <div className="relative">
+          <div className="relative m-auto">
             <canvas
               ref={canvasRef}
               className="shadow-lg border border-navy-600"

@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
-import { ZoomIn, ZoomOut, RotateCcw, Maximize2, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { ImageAnnotation } from "../contexts/AppContext";
 
 interface ImageViewerProps {
@@ -40,6 +40,10 @@ const DEFAULT_COLORS = [
   "#009688", // Teal
   "#4CAF50", // Green
 ];
+
+// Zoom step table for discrete zoom levels (Windows Photo Viewer style)
+const ZOOM_STEPS = [0.1, 0.15, 0.2, 0.25, 0.33, 0.5, 0.67, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 5.0];
+const ACTUAL_SIZE = 1.0;
 
 function AnnotationModal({
   isOpen,
@@ -127,9 +131,8 @@ function AnnotationModal({
                 <button
                   key={c}
                   onClick={() => setColor(c)}
-                  className={`w-10 h-10 rounded border-2 transition-all ${
-                    color === c ? "border-off-white scale-110" : "border-navy-600 hover:border-navy-500"
-                  }`}
+                  className={`w-10 h-10 rounded border-2 transition-all ${color === c ? "border-off-white scale-110" : "border-navy-600 hover:border-navy-500"
+                    }`}
                   style={{ backgroundColor: c }}
                   title={c}
                 />
@@ -218,19 +221,22 @@ export default function ImageViewer({
   // natural image size
   const [imgNatural, setImgNatural] = useState({ w: 1, h: 1 });
 
-  // outer viewport size
-  const [viewport, setViewport] = useState({ w: 800, h: 600 });
-
   // internal state if controlled props not provided
   const [internalZoom, setInternalZoom] = useState(1);
 
   // effective scale (prop takes precedence)
   const scale = typeof propZoom === "number" ? propZoom : internalZoom;
 
-  // workspace factor (Canva-style)
-  const WORKSPACE_FACTOR = 5;
-
   const [fitScale, setFitScale] = useState(1);
+  const [isFitMode, setIsFitMode] = useState(true);
+
+  // Drag panning state
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+
+  // Flag to disable transitions for instant centering
+  const [instantTransition, setInstantTransition] = useState(false);
 
   // local fallback for annotations
   const [localAnnotations, setLocalAnnotations] = useState<ImageAnnotation[]>([]);
@@ -249,24 +255,145 @@ export default function ImageViewer({
     mode: "create",
   });
 
+  /* --------------------------
+     Calculate pan bounds for a given scale
+     -------------------------- */
+  const getPanBounds = useCallback((zoomScale: number) => {
+    const outer = outerRef.current;
+    if (!outer) return { minX: 0, maxX: 0, minY: 0, maxY: 0, allowPanX: false, allowPanY: false };
 
+    const viewportWidth = outer.clientWidth;
+    const viewportHeight = outer.clientHeight;
+    const scaledWidth = imgNatural.w * zoomScale;
+    const scaledHeight = imgNatural.h * zoomScale;
+
+    const allowPanX = scaledWidth > viewportWidth;
+    const allowPanY = scaledHeight > viewportHeight;
+
+    const maxPanX = allowPanX ? (scaledWidth - viewportWidth) / 2 : 0;
+    const maxPanY = allowPanY ? (scaledHeight - viewportHeight) / 2 : 0;
+
+    return {
+      minX: -maxPanX,
+      maxX: maxPanX,
+      minY: -maxPanY,
+      maxY: maxPanY,
+      allowPanX,
+      allowPanY
+    };
+  }, [imgNatural]);
 
   /* --------------------------
-     Helper to update zoom
+     Clamp pan offset to bounds
+     -------------------------- */
+  const clampPanOffset = useCallback((pan: { x: number; y: number }, zoomScale: number) => {
+    const bounds = getPanBounds(zoomScale);
+    return {
+      x: bounds.allowPanX ? Math.max(bounds.minX, Math.min(bounds.maxX, pan.x)) : 0,
+      y: bounds.allowPanY ? Math.max(bounds.minY, Math.min(bounds.maxY, pan.y)) : 0
+    };
+  }, [getPanBounds]);
+
+  /* --------------------------
+     Windows Photo Viewer Style Zoom Logic
+     - Discrete zoom steps
+     - Always anchored to cursor or viewport center
+     - Fit mode vs Actual Size (100%)
+     - Instant center when at/below fit scale
      -------------------------- */
   const setZoomAndSync = useCallback(
-    (newScale: number) => {
-      // clamp
-      const MIN = Math.max(0.25, fitScale * 0.5);
-      const MAX = Math.max(fitScale * 6, 4);
-      newScale = Math.max(MIN, Math.min(MAX, newScale));
+    (newScale: number, anchorX?: number, anchorY?: number) => {
+      const outer = outerRef.current;
+      if (!outer) {
+        setInternalZoom(newScale);
+        onZoomChange?.(newScale);
+        return;
+      }
 
-      // update both internal and external
+      // Clamp zoom level to available steps
+      newScale = Math.max(ZOOM_STEPS[0], Math.min(ZOOM_STEPS[ZOOM_STEPS.length - 1], newScale));
+
+      const viewportWidth = outer.clientWidth;
+      const viewportHeight = outer.clientHeight;
+      const scaledWidth = imgNatural.w * newScale;
+      const scaledHeight = imgNatural.h * newScale;
+
+      const epsilon = 0.02; // Tolerance for fit mode detection
+
+      // Check if this is fit mode (within tolerance of fitScale)
+      const isNowFit = Math.abs(newScale - fitScale) < epsilon;
+
+      // FIT MODE: Always centered, instant transition
+      if (isNowFit) {
+        setInstantTransition(true);
+        setInternalZoom(fitScale); // Use exact fit scale
+        onZoomChange?.(fitScale);
+        setPanOffset({ x: 0, y: 0 });
+        setIsFitMode(true);
+        setTimeout(() => setInstantTransition(false), 0);
+        return;
+      }
+
+      setIsFitMode(false);
+
+      // If image fits entirely in viewport, always center it
+      const imageFitsInViewport = scaledWidth <= viewportWidth && scaledHeight <= viewportHeight;
+      if (imageFitsInViewport) {
+        setInstantTransition(true);
+        setInternalZoom(newScale);
+        onZoomChange?.(newScale);
+        setPanOffset({ x: 0, y: 0 });
+        setTimeout(() => setInstantTransition(false), 0);
+        return;
+      }
+
+      // Determine anchor point: cursor position or viewport center
+      let anchorScreenX: number;
+      let anchorScreenY: number;
+
+      if (anchorX !== undefined && anchorY !== undefined) {
+        // Zoom at cursor position
+        const rect = outer.getBoundingClientRect();
+        anchorScreenX = anchorX - rect.left - viewportWidth / 2;
+        anchorScreenY = anchorY - rect.top - viewportHeight / 2;
+      } else {
+        // Zoom at viewport center (toolbar controls)
+        anchorScreenX = 0;
+        anchorScreenY = 0;
+      }
+
+      // Calculate which image point is currently at the anchor
+      // panOffset is in screen pixels: imagePoint = (anchorScreen - panOffset) / currentScale
+      const imagePointX = (anchorScreenX - panOffset.x) / scale;
+      const imagePointY = (anchorScreenY - panOffset.y) / scale;
+
+      // Calculate new pan offset to keep the same image point at the anchor
+      // newPanOffset = anchorScreen - imagePoint * newScale
+      const newPan = {
+        x: anchorScreenX - imagePointX * newScale,
+        y: anchorScreenY - imagePointY * newScale
+      };
+
+      // Clamp pan offset to bounds
+      const clampedPan = clampPanOffset(newPan, newScale);
+
+      // Apply updates
       setInternalZoom(newScale);
       onZoomChange?.(newScale);
+      setPanOffset(clampedPan);
     },
-    [fitScale, onZoomChange]
+    [fitScale, onZoomChange, imgNatural, scale, panOffset, clampPanOffset]
   );
+
+  /* --------------------------
+     Handle external zoom changes (from header controls)
+     -------------------------- */
+  useEffect(() => {
+    if (typeof propZoom === "number" && propZoom !== scale) {
+      // External zoom changed - apply it through our zoom function
+      setZoomAndSync(propZoom);
+    }
+  }, [propZoom, scale, setZoomAndSync]);
 
   /* --------------------------
      Image load: set fit scale and initial view
@@ -280,10 +407,8 @@ export default function ImageViewer({
       const outer = outerRef.current;
       if (!outer) return;
 
-      // Subtract padding (32px total) to get actual available space
-      const vw = outer.clientWidth - 32;
-      const vh = outer.clientHeight - 32;
-      setViewport({ w: vw, h: vh });
+      const vw = outer.clientWidth;
+      const vh = outer.clientHeight;
 
       const s = Math.min(vw / img.naturalWidth, vh / img.naturalHeight);
       setFitScale(s);
@@ -291,18 +416,7 @@ export default function ImageViewer({
       // sync both internal and external on init
       setInternalZoom(s);
       onZoomChange?.(s);
-
-      // Center scroll position using requestAnimationFrame to ensure layout is complete
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (outer) {
-            const centerX = (outer.scrollWidth - outer.clientWidth) / 2;
-            const centerY = (outer.scrollHeight - outer.clientHeight) / 2;
-            outer.scrollLeft = centerX;
-            outer.scrollTop = centerY;
-          }
-        });
-      });
+      setIsFitMode(true);
     };
 
     img.onerror = () => {
@@ -311,155 +425,167 @@ export default function ImageViewer({
   }, [documentUrl, onZoomChange]);
 
   /* --------------------------
-     Resize observer: recalc fit scale
+     Resize observer: recalc fit scale and adjust if needed
      -------------------------- */
   useEffect(() => {
     const outer = outerRef.current;
     if (!outer) return;
 
     const ro = new ResizeObserver(() => {
-      // Subtract padding (32px total) to get actual available space
-      const vw = outer.clientWidth - 32;
-      const vh = outer.clientHeight - 32;
-      setViewport({ w: vw, h: vh });
+      const vw = outer.clientWidth;
+      const vh = outer.clientHeight;
       const s = Math.min(vw / imgNatural.w, vh / imgNatural.h);
       setFitScale(s);
 
-      // if currently at (approx) fitScale, snap to new fitScale to keep image fully visible
-      if (Math.abs(scale - fitScale) < 1e-6) {
+      // If currently in fit mode, update to new fit scale
+      if (isFitMode) {
         setInternalZoom(s);
         onZoomChange?.(s);
+        setPanOffset({ x: 0, y: 0 });
+      } else {
+        // Reclamp pan offset to new bounds
+        setPanOffset(prev => clampPanOffset(prev, scale));
       }
     });
 
     ro.observe(outer);
     return () => ro.disconnect();
-  }, [imgNatural, scale, fitScale, onZoomChange]);
+  }, [imgNatural, isFitMode, onZoomChange, scale, clampPanOffset]);
+
+
 
   /* --------------------------
-     Center scroll when scale changes to fit scale
+     Helper to find closest zoom step
      -------------------------- */
-  useEffect(() => {
-    const outer = outerRef.current;
-    if (!outer || imgNatural.w === 1) return;
+  const findClosestZoomStepIndex = useCallback((currentScale: number) => {
+    return ZOOM_STEPS.reduce((closestIdx, curr, idx) =>
+      Math.abs(curr - currentScale) < Math.abs(ZOOM_STEPS[closestIdx] - currentScale)
+        ? idx
+        : closestIdx
+      , 0);
+  }, []);
 
-    // Only center when at fit scale (reset view)
-    if (Math.abs(scale - fitScale) < 0.01) {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const centerX = (outer.scrollWidth - outer.clientWidth) / 2;
-          const centerY = (outer.scrollHeight - outer.clientHeight) / 2;
-          outer.scrollLeft = centerX;
-          outer.scrollTop = centerY;
-        });
-      });
+  /* --------------------------
+     Wheel zoom with discrete steps (Windows Photo Viewer style)
+     -------------------------- */
+  const onWheel = useCallback((e: React.WheelEvent) => {
+    // Prevent default browser scrolling
+    e.preventDefault();
+    e.stopPropagation();
+
+    const delta = -e.deltaY;
+    const zoomIn = delta > 0;
+
+    // Find closest step to current scale
+    const currentIdx = findClosestZoomStepIndex(scale);
+
+    // Move to next/previous step
+    let newIdx;
+    if (zoomIn) {
+      newIdx = Math.min(currentIdx + 1, ZOOM_STEPS.length - 1);
+    } else {
+      // If we are at a scale that is NOT in the steps (e.g. fit scale 0.18),
+      // and we want to zoom out, we should go to the step BELOW it.
+      // currentIdx will point to the closest (e.g. 0.2).
+      // If we just do currentIdx - 1, we might go to 0.15, which is correct.
+      // But if current scale is 0.18 and closest is 0.15, currentIdx is index of 0.15.
+      // Then currentIdx - 1 is 0.1. Correct.
+      // But if current scale is 0.18 and closest is 0.2, currentIdx is index of 0.2.
+      // Then currentIdx - 1 is 0.15. Correct.
+
+      // However, if we are at Fit Scale (e.g. 0.18) and it's smaller than ALL steps?
+      // (Unlikely with 0.1 start, but possible).
+      newIdx = Math.max(currentIdx - 1, 0);
     }
-  }, [scale, fitScale, imgNatural.w]);
+
+    const newScale = ZOOM_STEPS[newIdx];
+
+    // Disable transition for snappy zoom
+    setInstantTransition(true);
+
+    // Zoom anchored to mouse position
+    setZoomAndSync(newScale, e.clientX, e.clientY);
+
+    // Re-enable transition after a short delay (optional, or just keep it off for zoom)
+    requestAnimationFrame(() => setInstantTransition(false));
+  }, [scale, findClosestZoomStepIndex, setZoomAndSync]);
 
   /* --------------------------
-     Wheel zoom
+     Drag panning handlers (Windows Photos style - no scrollbars)
      -------------------------- */
-  const onWheel = (e: React.WheelEvent) => {
-    // Only handle Ctrl/Cmd + scroll for zooming
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      e.stopPropagation();
-      
-      // Smoother zoom with smaller increments
-      const delta = -e.deltaY;
-      const factor = 1 + Math.sign(delta) * 0.1;
-      
-      setZoomAndSync(scale * factor);
-    }
-    // Otherwise, let the browser handle normal scrolling (both vertical and horizontal)
-  };
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // Only pan with left mouse button and when not clicking on annotation
+    if (e.button !== 0 || (e.target as HTMLElement).closest('[data-annotation]')) return;
 
-  /* --------------------------
-     Buttons
-     -------------------------- */
-  const zoomIn = useCallback(() => {
-    console.log('Zoom In clicked, current scale:', scale);
-    setZoomAndSync(scale * 1.25);
-  }, [scale, setZoomAndSync]);
-  
-  const zoomOut = useCallback(() => {
-    console.log('Zoom Out clicked, current scale:', scale);
-    setZoomAndSync(scale * 0.8);
-  }, [scale, setZoomAndSync]);
+    const bounds = getPanBounds(scale);
+    // Only allow dragging if image is larger than viewport in at least one dimension
+    if (!bounds.allowPanX && !bounds.allowPanY) return;
 
-  const resetView = useCallback(() => {
-    console.log('Reset View clicked');
-    const s = fitScale;
-    setInternalZoom(s);
-    onZoomChange?.(s);
-  }, [fitScale, onZoomChange]);
+    setIsDragging(true);
+    setDragStart({ x: e.clientX, y: e.clientY });
+    e.preventDefault();
+  }, [getPanBounds, scale]);
 
-  /* --------------------------
-     Keyboard shortcuts
-     -------------------------- */
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Zoom in: + or =
-      if ((e.key === '+' || e.key === '=') && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        zoomIn();
-      }
-      // Zoom out: -
-      if (e.key === '-' && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        zoomOut();
-      }
-      // Reset: 0
-      if (e.key === '0' && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        resetView();
-      }
-      // Ctrl/Cmd + Scroll for zoom
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key === '+' || e.key === '=') {
-          e.preventDefault();
-          zoomIn();
-        }
-        if (e.key === '-') {
-          e.preventDefault();
-          zoomOut();
-        }
-      }
-    };
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging) return;
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [zoomIn, zoomOut, resetView]);
+    const deltaX = e.clientX - dragStart.x;
+    const deltaY = e.clientY - dragStart.y;
+
+    setPanOffset(prev => {
+      const newPan = {
+        x: prev.x + deltaX,
+        y: prev.y + deltaY
+      };
+      return clampPanOffset(newPan, scale);
+    });
+
+    setDragStart({ x: e.clientX, y: e.clientY });
+  }, [isDragging, dragStart, clampPanOffset, scale]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+
+
+
 
   /* --------------------------
      Annotation helpers (client -> image px)
      -------------------------- */
   const clientToImage = (clientX: number, clientY: number) => {
-    if (!outerRef.current || !workspaceRef.current) return { x: 0, y: 0 };
-    const outerRect = outerRef.current.getBoundingClientRect();
+    if (!workspaceRef.current) return { x: 0, y: 0 };
     const workspaceRect = workspaceRef.current.getBoundingClientRect();
-    
+
     // Calculate position relative to the scaled image
     const localX = clientX - workspaceRect.left;
     const localY = clientY - workspaceRect.top;
-    
+
     return {
       x: Math.round(localX / scale),
       y: Math.round(localY / scale),
     };
   };
 
-  const onDoubleClick = (e: React.MouseEvent) => {
-    const pos = clientToImage(e.clientX, e.clientY);
-    if (pos.x < 0 || pos.y < 0 || pos.x > imgNatural.w || pos.y > imgNatural.h) return;
+  const onDoubleClick = useCallback((e: React.MouseEvent) => {
+    // Don't handle double-click on annotations
+    if ((e.target as HTMLElement).closest('[data-annotation]')) return;
 
-    // Open modal for annotation creation
-    setModalState({
-      isOpen: true,
-      mode: "create",
-      position: pos,
-    });
-  };
+    e.preventDefault();
+    e.stopPropagation();
+
+    const epsilon = 0.01;
+
+    // Windows Photo Viewer behavior: Toggle between Fit and Actual Size (100%)
+    if (scale >= ACTUAL_SIZE - epsilon) {
+      // Currently at or above 100% → Go to Fit (centered)
+      setZoomAndSync(fitScale);
+    } else {
+      // Currently below 100% (fit or zoomed out) → Go to Actual Size, anchored at click
+      setZoomAndSync(ACTUAL_SIZE, e.clientX, e.clientY);
+    }
+  }, [scale, fitScale, setZoomAndSync]);
 
   const handleAnnotationSave = (content: string, color: string) => {
     if (modalState.mode === "create" && modalState.position) {
@@ -516,7 +642,8 @@ export default function ImageViewer({
     }
   };
 
-  const handleAnnotationClick = (annotation: ImageAnnotation) => {
+  const handleAnnotationClick = (annotation: ImageAnnotation, e: React.MouseEvent) => {
+    e.stopPropagation();
     setModalState({
       isOpen: true,
       mode: "edit",
@@ -524,61 +651,101 @@ export default function ImageViewer({
     });
   };
 
+  const handleImageClick = (e: React.MouseEvent) => {
+    // Right-click or Ctrl+click to create annotation
+    if (e.button === 2 || e.ctrlKey) {
+      e.preventDefault();
+      const pos = clientToImage(e.clientX, e.clientY);
+      if (pos.x < 0 || pos.y < 0 || pos.x > imgNatural.w || pos.y > imgNatural.h) return;
+
+      setModalState({
+        isOpen: true,
+        mode: "create",
+        position: pos,
+      });
+    }
+  };
+
   /* --------------------------
      Render
      -------------------------- */
+  const bounds = getPanBounds(scale);
+  const canPan = bounds.allowPanX || bounds.allowPanY;
+
   return (
-    <div className={`relative w-full h-full ${className}`}>
-      {/* OUTER VIEWPORT */}
+    <div
+      className={`w-full h-full ${className}`}
+      style={{
+        overflow: 'hidden',
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      {/* OUTER VIEWPORT - Microsoft Photos style container with fixed viewport */}
       <div
         ref={outerRef}
-        className="w-full h-full relative overflow-auto bg-navy-800 scroll-smooth"
+        className="w-full h-full bg-navy-800"
+        style={{
+          cursor: isDragging ? 'grabbing' : (canPan ? 'grab' : 'default'),
+          overflow: 'hidden',
+          position: 'relative',
+        }}
         onWheel={onWheel}
         onDoubleClick={onDoubleClick}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onClick={handleImageClick}
+        onContextMenu={(e) => e.preventDefault()}
       >
-        {/* IMAGE CONTAINER WRAPPER */}
-        <div className="p-4 min-h-full" style={{
-          display: 'flex',
-          // viewport already has padding subtracted
-          alignItems: (imgNatural.h * scale) > viewport.h ? 'flex-start' : 'center',
-          justifyContent: (imgNatural.w * scale) > viewport.w ? 'flex-start' : 'center'
-        }}>
+        {/* WRAPPER - provides centering */}
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            position: 'relative',
+          }}
+        >
+          {/* IMAGE WRAPPER - scales and pans the image */}
           <div
             ref={workspaceRef}
             style={{
-              transform: `scale(${scale})`,
-              transformOrigin: (() => {
-                // viewport already has padding subtracted
-                const overflowsWidth = (imgNatural.w * scale) > viewport.w;
-                const overflowsHeight = (imgNatural.h * scale) > viewport.h;
-                if (overflowsWidth && overflowsHeight) return "top left";
-                if (overflowsWidth) return "center left";
-                if (overflowsHeight) return "top center";
-                return "center";
-              })(),
-              transition: "transform 0.1s ease-out",
-            }}
-          >
-          {/* IMAGE LAYER */}
-          <div
-            style={{
-              position: "relative",
+              position: 'relative',
               width: imgNatural.w,
               height: imgNatural.h,
+              transform: `scale(${scale})`,
+              transformOrigin: 'center center',
+              transition: (isDragging || instantTransition) ? 'none' : 'transform 0.2s ease-out, left 0.2s ease-out, top 0.2s ease-out',
+              maxWidth: 'none',
+              left: `${panOffset.x}px`,
+              top: `${panOffset.y}px`,
             }}
           >
+            {/* IMAGE LAYER */}
             <img
               ref={imageRef}
               src={documentUrl}
               alt="doc"
               draggable={false}
-              style={{ width: "100%", height: "100%", display: "block" }}
+              style={{
+                width: '100%',
+                height: '100%',
+                display: 'block',
+                userSelect: 'none',
+              }}
             />
 
             {/* PIXEL-LOCKED NOTES */}
             {annotations.map((a) => (
               <div
                 key={a.id}
+                data-annotation
                 style={{
                   position: "absolute",
                   left: a.xPixel,
@@ -594,10 +761,7 @@ export default function ImageViewer({
                     borderColor: a.color ? `${a.color}CC` : "#F9A825",
                     color: "#000",
                   }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    handleAnnotationClick(a);
-                  }}
+                  onClick={(ev) => handleAnnotationClick(a, ev)}
                   title={a.content}
                 >
                   📝
@@ -605,7 +769,6 @@ export default function ImageViewer({
               </div>
             ))}
           </div>
-        </div>
         </div>
       </div>
 

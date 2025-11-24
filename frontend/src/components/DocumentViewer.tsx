@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAppContext } from '../contexts/AppContext';
 import { useAnnotations } from '../hooks/useAnnotations';
 import PDFViewer from './PDFViewer';
+import ImageViewer from './ImageViewer';
 import mammoth from 'mammoth';
 import { ZoomIn, ZoomOut, RotateCcw, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 
@@ -122,13 +123,15 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
     }
   }, [onAnnotationClick]);
 
-  // Set loading state when document changes
+  // Set loading state when document changes (skip for images)
   React.useEffect(() => {
-    dispatch({
-      type: 'SET_VIEWER_STATE',
-      payload: { isLoading: true }
-    });
-  }, [documentId, dispatch]);
+    if (viewerType !== 'image') {
+      dispatch({
+        type: 'SET_VIEWER_STATE',
+        payload: { isLoading: true }
+      });
+    }
+  }, [documentId, dispatch, viewerType]);
 
   // Load DOCX content when needed
   useEffect(() => {
@@ -250,107 +253,30 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
         );
       
       case 'image':
-        if (imageError) {
-          return (
-            <motion.div 
-              className="flex items-center justify-center h-full"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3 }}
-            >
-              <div className="text-center text-red-400">
-                <p className="text-lg font-semibold mb-2">Failed to load image</p>
-                <p>The image could not be displayed</p>
-              </div>
-            </motion.div>
-          );
+        // Immediately set loading to false for images
+        if (viewerState.isLoading) {
+          handleDocumentLoad(1);
         }
-
+        
         return (
-          <motion.div 
-            className="flex flex-col h-full"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.3 }}
-          >
-            {/* Image Toolbar */}
-            <motion.div 
-              className="bg-navy-900 border-b border-navy-700 p-3 flex items-center justify-between"
-              initial={{ y: -20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ duration: 0.3, delay: 0.1 }}
-            >
-              <div className="flex items-center space-x-2">
-                <span className="text-off-white text-sm">Image Viewer</span>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <motion.button
-                  onClick={handleZoomOut}
-                  className="p-2 rounded bg-navy-800 text-off-white hover:bg-navy-700"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  transition={{ duration: 0.1 }}
-                >
-                  <ZoomOut size={16} />
-                </motion.button>
-                
-                <motion.span 
-                  className="text-off-white text-sm px-3 min-w-[60px] text-center"
-                  key={Math.round(viewerState.zoomScale * 100)}
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  {Math.round(viewerState.zoomScale * 100)}%
-                </motion.span>
-                
-                <motion.button
-                  onClick={handleZoomIn}
-                  className="p-2 rounded bg-navy-800 text-off-white hover:bg-navy-700"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  transition={{ duration: 0.1 }}
-                >
-                  <ZoomIn size={16} />
-                </motion.button>
-                
-                <motion.button
-                  onClick={handleResetZoom}
-                  className="p-2 rounded bg-navy-800 text-off-white hover:bg-navy-700"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  transition={{ duration: 0.1 }}
-                >
-                  <RotateCcw size={16} />
-                </motion.button>
-              </div>
-            </motion.div>
-
-            {/* Image Container */}
-            <div 
-              ref={containerRef}
-              className="flex-1 bg-navy-800 overflow-auto flex justify-center items-center"
-              style={{ cursor: 'grab' }}
-            >
-              <motion.img
-                src={documentUrl}
-                alt={filename}
-                className="max-w-none object-contain shadow-lg"
-                style={{
-                  transform: `scale(${viewerState.zoomScale}) translate(${viewerState.panOffset.x}px, ${viewerState.panOffset.y}px)`,
-                  transformOrigin: 'center center',
-                  transition: 'transform 0.2s ease'
-                }}
-                onLoad={handleImageLoad}
-                onError={handleImageError}
-                draggable={false}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.5 }}
-              />
-            </div>
-          </motion.div>
+          <ImageViewer
+            documentUrl={documentUrl}
+            documentId={documentId}
+            zoomScale={viewerState.zoomScale}
+            onZoomChange={handleZoomChange}
+            annotations={annotations.filter((ann): ann is import('../contexts/AppContext').ImageAnnotation => 
+              ann.type === 'image'
+            )}
+            onAnnotationCreate={async (annotation) => {
+              await createAnnotation(annotation);
+            }}
+            onAnnotationUpdate={async (id, updates) => {
+              await updateAnnotation(id, updates);
+            }}
+            onAnnotationDelete={async (id) => {
+              await deleteAnnotation(id);
+            }}
+          />
         );
       
       case 'docx':
@@ -595,26 +521,34 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
   };
 
   return (
-    <div className="relative h-full bg-navy-800">
+    <div className="relative h-full bg-navy-800 overflow-hidden">
       {/* Document Viewer */}
-      <div className="h-full">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={`${documentId}-${viewerType}`}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.05 }}
-            transition={{ duration: 0.3 }}
-            className="h-full"
-          >
+      <div className="h-full overflow-hidden">
+        {viewerType === 'image' ? (
+          // Render images instantly without animations
+          <div className="h-full overflow-hidden">
             {renderViewer()}
-          </motion.div>
-        </AnimatePresence>
+          </div>
+        ) : (
+          // Use animations for other document types
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={`${documentId}-${viewerType}`}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.05 }}
+              transition={{ duration: 0.3 }}
+              className="h-full"
+            >
+              {renderViewer()}
+            </motion.div>
+          </AnimatePresence>
+        )}
       </div>
       
-      {/* Loading overlay */}
+      {/* Loading overlay - skip for images */}
       <AnimatePresence>
-        {viewerState.isLoading && (
+        {viewerState.isLoading && viewerType !== 'image' && (
           <motion.div 
             className="absolute inset-0 bg-navy-800/80 backdrop-blur-sm flex items-center justify-center z-20"
             initial={{ opacity: 0 }}

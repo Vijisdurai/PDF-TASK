@@ -1,14 +1,12 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 
 const Header: React.FC = () => {
   const { state, dispatch } = useAppContext();
   const location = useLocation();
   const navigate = useNavigate();
-  const [isEditingZoom, setIsEditingZoom] = useState(false);
-  const [zoomInput, setZoomInput] = useState('');
 
   const isDocumentViewer = location.pathname.startsWith('/document/');
 
@@ -45,32 +43,7 @@ const Header: React.FC = () => {
   };
 
   const handleFitToScreen = () => {
-    dispatch({ type: 'SET_VIEWER_STATE', payload: { zoomScale: 1, panOffset: { x: 0, y: 0 } } });
-  };
-
-  const handleZoomClick = () => {
-    setIsEditingZoom(true);
-    setZoomInput(Math.round(state.viewerState.zoomScale * 100).toString());
-  };
-
-  const handleZoomInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setZoomInput(e.target.value);
-  };
-
-  const handleZoomInputBlur = () => {
-    const value = parseInt(zoomInput);
-    if (!isNaN(value) && value >= 25 && value <= 300) {
-      dispatch({ type: 'SET_VIEWER_STATE', payload: { zoomScale: value / 100 } });
-    }
-    setIsEditingZoom(false);
-  };
-
-  const handleZoomInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      handleZoomInputBlur();
-    } else if (e.key === 'Escape') {
-      setIsEditingZoom(false);
-    }
+    dispatch({ type: 'SET_VIEWER_STATE', payload: { zoomScale: 1 } });
   };
 
   return (
@@ -122,7 +95,7 @@ const Header: React.FC = () => {
             </span>
             <button
               onClick={handleNextPage}
-              disabled={state.viewerState.totalPages && state.viewerState.currentPage >= state.viewerState.totalPages}
+              disabled={!!(state.viewerState.totalPages && state.viewerState.currentPage >= state.viewerState.totalPages)}
               className="p-2 bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all text-off-white disabled:opacity-30 disabled:cursor-not-allowed border border-white/10 hover:border-white/20"
               title="Next page"
             >
@@ -130,50 +103,70 @@ const Header: React.FC = () => {
             </button>
           </div>
 
-          {/* Right: Zoom controls - glassmorphic */}
-          <div className="flex items-center space-x-2 flex-1 justify-end">
+          {/* Right: Zoom controls - glassmorphic with slider */}
+          <div className="flex items-center space-x-3 flex-1 justify-end">
             <button
               onClick={handleZoomOut}
               className="p-2 bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all text-off-white border border-white/10 hover:border-white/20"
-              title="Zoom out"
+              title="Zoom out (Ctrl + -)"
             >
               <ZoomOut size={18} />
             </button>
             
-            {isEditingZoom ? (
-              <input
-                type="text"
-                value={zoomInput}
-                onChange={handleZoomInputChange}
-                onBlur={handleZoomInputBlur}
-                onKeyDown={handleZoomInputKeyDown}
-                className="w-16 px-2 py-1.5 text-sm text-center bg-white/10 backdrop-blur-sm text-off-white rounded-lg border border-white/20 focus:outline-none focus:border-white/30 focus:bg-white/15"
-                autoFocus
-              />
-            ) : (
-              <button
-                onClick={handleZoomClick}
-                className="px-3 py-1.5 text-sm text-off-white bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all min-w-[50px] border border-white/10 hover:border-white/20"
-                title="Click to edit zoom"
-              >
-                {Math.round(state.viewerState.zoomScale * 100)}%
-              </button>
-            )}
+            {/* Zoom Slider */}
+            <input
+              type="range"
+              min={10}
+              max={500}
+              value={Math.round(state.viewerState.zoomScale * 100)}
+              onChange={(e) => {
+                const newScale = Number(e.target.value) / 100;
+                dispatch({ type: 'SET_VIEWER_STATE', payload: { zoomScale: newScale } });
+              }}
+              className="w-32 h-2 bg-white/10 rounded-lg appearance-none cursor-pointer"
+              style={{
+                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((state.viewerState.zoomScale * 100 - 10) / (500 - 10)) * 100}%, rgba(255,255,255,0.1) ${((state.viewerState.zoomScale * 100 - 10) / (500 - 10)) * 100}%, rgba(255,255,255,0.1) 100%)`
+              }}
+              title="Zoom Slider"
+            />
             
             <button
               onClick={handleZoomIn}
               className="p-2 bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all text-off-white border border-white/10 hover:border-white/20"
-              title="Zoom in"
+              title="Zoom in (Ctrl + +)"
             >
               <ZoomIn size={18} />
             </button>
             
+            {/* Zoom Percentage Dropdown */}
+            <select
+              value={Math.round(state.viewerState.zoomScale * 100)}
+              onChange={(e) => {
+                const newScale = Number(e.target.value) / 100;
+                dispatch({ type: 'SET_VIEWER_STATE', payload: { zoomScale: newScale } });
+              }}
+              className="px-3 py-1.5 text-sm text-off-white bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all border border-white/10 hover:border-white/20 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+              title="Zoom Level"
+            >
+              {[25, 33, 50, 75, 100, 125, 150, 200, 300, 400].map((preset) => (
+                <option key={preset} value={preset}>
+                  {preset}%
+                </option>
+              ))}
+              {![25, 33, 50, 75, 100, 125, 150, 200, 300, 400].includes(Math.round(state.viewerState.zoomScale * 100)) && 
+                Math.round(state.viewerState.zoomScale * 100) > 0 && (
+                <option value={Math.round(state.viewerState.zoomScale * 100)}>
+                  {Math.round(state.viewerState.zoomScale * 100)}%
+                </option>
+              )}
+            </select>
+            
             <button
               onClick={handleFitToScreen}
-              className="p-2 bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all text-off-white border border-white/10 hover:border-white/20"
-              title="Fit to screen"
+              className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 rounded-lg transition-all text-white font-medium"
+              title="Fit to screen (0)"
             >
-              <Maximize2 size={18} />
+              Fit
             </button>
           </div>
         </div>

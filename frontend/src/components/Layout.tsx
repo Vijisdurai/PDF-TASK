@@ -28,12 +28,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   return (
     <ErrorBoundary>
-      <div className="flex flex-col min-h-screen bg-navy-900">
+      <div className="flex flex-col h-screen bg-navy-900 overflow-hidden">
         {/* Header */}
         <Header />
         
         {/* Main content area */}
-        <main className="flex-1 overflow-y-auto scroll-smooth">
+        <main className="flex-1 overflow-hidden">
           {children}
         </main>
 

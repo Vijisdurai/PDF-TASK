@@ -18,40 +18,52 @@ export interface ApiError {
 class ApiService {
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retries = 3,
+    backoff = 300
   ): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`;
-    
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        ...options.headers,
-      },
-    });
 
-    if (!response.ok) {
-      let errorData: ApiError;
-      try {
-        errorData = await response.json();
-      } catch {
-        errorData = {
-          error: {
-            code: 'NETWORK_ERROR',
-            message: `HTTP ${response.status}: ${response.statusText}`,
-          },
-        };
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          ...options.headers,
+        },
+      });
+
+      if (!response.ok) {
+        let errorData: ApiError;
+        try {
+          errorData = await response.json();
+        } catch {
+          errorData = {
+            error: {
+              code: 'NETWORK_ERROR',
+              message: `HTTP ${response.status}: ${response.statusText}`,
+            },
+          };
+        }
+        throw new Error(errorData.error?.message || 'Request failed');
       }
-      throw new Error(errorData.error?.message || 'Request failed');
-    }
 
-    // Handle empty responses (like DELETE operations)
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      return response.json();
+      // Handle empty responses (like DELETE operations)
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        return response.json();
+      }
+
+      // Return empty object for non-JSON responses
+      return {} as T;
+    } catch (error) {
+      if (retries > 0 && (error instanceof TypeError && error.message === 'Failed to fetch')) {
+        // Wait for backoff time
+        await new Promise(resolve => setTimeout(resolve, backoff));
+        // Retry with decremented retries and increased backoff
+        return this.request<T>(endpoint, options, retries - 1, backoff * 2);
+      }
+      throw error;
     }
-    
-    // Return empty object for non-JSON responses
-    return {} as T;
   }
 
   // Document operations
@@ -188,10 +200,10 @@ class ApiService {
     if (annotationType) {
       params.append('annotation_type', annotationType);
     }
-    
+
     const endpoint = `/annotations/${documentId}${params.toString() ? `?${params.toString()}` : ''}`;
     const response = await this.request<{ annotations: any[] }>(endpoint);
-    
+
     // Transform backend response to frontend format
     return response.annotations.map(ann => this.transformAnnotationFromBackend(ann));
   }
@@ -281,35 +293,35 @@ class ApiService {
   // Transform annotation update from frontend format to backend format
   private transformAnnotationUpdateToBackend(updates: Partial<Omit<Annotation, 'id' | 'documentId' | 'createdAt'>>): any {
     const payload: any = {};
-    
+
     if (updates.content !== undefined) {
       payload.content = updates.content;
     }
-    
+
     if ('page' in updates && updates.page !== undefined) {
       payload.page = updates.page;
     }
-    
+
     if ('xPercent' in updates && updates.xPercent !== undefined) {
       payload.x_percent = updates.xPercent;
     }
-    
+
     if ('yPercent' in updates && updates.yPercent !== undefined) {
       payload.y_percent = updates.yPercent;
     }
-    
+
     if ('xPixel' in updates && updates.xPixel !== undefined) {
       payload.x_pixel = updates.xPixel;
     }
-    
+
     if ('yPixel' in updates && updates.yPixel !== undefined) {
       payload.y_pixel = updates.yPixel;
     }
-    
+
     if ('color' in updates && updates.color !== undefined) {
       payload.color = updates.color;
     }
-    
+
     return payload;
   }
 

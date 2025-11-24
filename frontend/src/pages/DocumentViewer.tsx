@@ -196,7 +196,7 @@ const DocumentViewerPage: React.FC = () => {
   }, [dispatch]);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-full overflow-hidden">
       {/* Main viewer area - no scroll, DocumentViewer handles its own scrolling */}
       <div 
         className="flex-1 bg-navy-800 border-r border-navy-700 overflow-hidden"
