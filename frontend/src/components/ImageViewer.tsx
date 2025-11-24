@@ -389,11 +389,19 @@ export default function ImageViewer({
      Handle external zoom changes (from header controls)
      -------------------------- */
   useEffect(() => {
-    if (typeof propZoom === "number" && propZoom !== scale) {
-      // External zoom changed - apply it through our zoom function
-      setZoomAndSync(propZoom);
+    if (typeof propZoom === "number") {
+      // Check for fit mode signal (-1)
+      if (propZoom === -1) {
+        // Apply fit scale
+        if (fitScale > 0) {
+          setZoomAndSync(fitScale);
+        }
+      } else if (propZoom !== scale) {
+        // External zoom changed - apply it through our zoom function
+        setZoomAndSync(propZoom);
+      }
     }
-  }, [propZoom, scale, setZoomAndSync]);
+  }, [propZoom, scale, fitScale, setZoomAndSync]);
 
   /* --------------------------
      Image load: set fit scale and initial view
@@ -467,48 +475,48 @@ export default function ImageViewer({
 
   /* --------------------------
      Wheel zoom with discrete steps (Windows Photo Viewer style)
+     Use native event listener to avoid passive listener issues
      -------------------------- */
-  const onWheel = useCallback((e: React.WheelEvent) => {
-    // Prevent default browser scrolling
-    e.preventDefault();
-    e.stopPropagation();
+  useEffect(() => {
+    const outer = outerRef.current;
+    if (!outer) return;
 
-    const delta = -e.deltaY;
-    const zoomIn = delta > 0;
+    const handleWheel = (e: WheelEvent) => {
+      // Prevent default browser scrolling
+      e.preventDefault();
+      e.stopPropagation();
 
-    // Find closest step to current scale
-    const currentIdx = findClosestZoomStepIndex(scale);
+      const delta = -e.deltaY;
+      const zoomIn = delta > 0;
 
-    // Move to next/previous step
-    let newIdx;
-    if (zoomIn) {
-      newIdx = Math.min(currentIdx + 1, ZOOM_STEPS.length - 1);
-    } else {
-      // If we are at a scale that is NOT in the steps (e.g. fit scale 0.18),
-      // and we want to zoom out, we should go to the step BELOW it.
-      // currentIdx will point to the closest (e.g. 0.2).
-      // If we just do currentIdx - 1, we might go to 0.15, which is correct.
-      // But if current scale is 0.18 and closest is 0.15, currentIdx is index of 0.15.
-      // Then currentIdx - 1 is 0.1. Correct.
-      // But if current scale is 0.18 and closest is 0.2, currentIdx is index of 0.2.
-      // Then currentIdx - 1 is 0.15. Correct.
+      // Find closest step to current scale
+      const currentIdx = findClosestZoomStepIndex(scale);
 
-      // However, if we are at Fit Scale (e.g. 0.18) and it's smaller than ALL steps?
-      // (Unlikely with 0.1 start, but possible).
-      newIdx = Math.max(currentIdx - 1, 0);
-    }
+      // Move to next/previous step
+      let newIdx;
+      if (zoomIn) {
+        newIdx = Math.min(currentIdx + 1, ZOOM_STEPS.length - 1);
+      } else {
+        newIdx = Math.max(currentIdx - 1, 0);
+      }
 
-    const newScale = ZOOM_STEPS[newIdx];
+      const newScale = ZOOM_STEPS[newIdx];
 
-    // Disable transition for snappy zoom
-    setInstantTransition(true);
+      // Disable transition for snappy zoom
+      setInstantTransition(true);
 
-    // Zoom anchored to mouse position
-    setZoomAndSync(newScale, e.clientX, e.clientY);
+      // Zoom anchored to mouse position
+      setZoomAndSync(newScale, e.clientX, e.clientY);
 
-    // Re-enable transition after a short delay (optional, or just keep it off for zoom)
-    requestAnimationFrame(() => setInstantTransition(false));
+      // Re-enable transition after a short delay
+      requestAnimationFrame(() => setInstantTransition(false));
+    };
+
+    // Add listener with passive: false to allow preventDefault
+    outer.addEventListener('wheel', handleWheel, { passive: false });
+    return () => outer.removeEventListener('wheel', handleWheel);
   }, [scale, findClosestZoomStepIndex, setZoomAndSync]);
+
 
   /* --------------------------
      Drag panning handlers (Windows Photos style - no scrollbars)
@@ -691,7 +699,6 @@ export default function ImageViewer({
           overflow: 'hidden',
           position: 'relative',
         }}
-        onWheel={onWheel}
         onDoubleClick={onDoubleClick}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
