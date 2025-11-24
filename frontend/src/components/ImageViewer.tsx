@@ -1,5 +1,5 @@
-import React, { useRef, useState, useEffect, useCallback } from "react";
-import { X } from "lucide-react";
+import React, { useRef, useState, useEffect, useCallback, useMemo } from "react";
+import { X, Minus, Plus, Scan, Expand, Shrink, PanelRight } from "lucide-react";
 import type { ImageAnnotation } from "../contexts/AppContext";
 
 interface ImageViewerProps {
@@ -12,6 +12,7 @@ interface ImageViewerProps {
   onAnnotationCreate?: (a: Omit<ImageAnnotation, "id" | "createdAt" | "updatedAt">) => void;
   onAnnotationUpdate?: (id: string, updates: Partial<Omit<ImageAnnotation, "id" | "documentId" | "createdAt">>) => void;
   onAnnotationDelete?: (id: string) => void;
+  onToggleSidePanel?: () => void;
 
   className?: string;
 }
@@ -42,7 +43,7 @@ const DEFAULT_COLORS = [
 ];
 
 // Zoom step table for discrete zoom levels (Windows Photo Viewer style)
-const ZOOM_STEPS = [0.1, 0.15, 0.2, 0.25, 0.33, 0.5, 0.67, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 5.0];
+const ZOOM_STEPS = [0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.25, 0.33, 0.5, 0.67, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 5.0, 10.0];
 const ACTUAL_SIZE = 1.0;
 
 function AnnotationModal({
@@ -212,37 +213,27 @@ export default function ImageViewer({
   onAnnotationCreate,
   onAnnotationUpdate,
   onAnnotationDelete,
+  onToggleSidePanel,
 
   className = "",
 }: ImageViewerProps) {
   const outerRef = useRef<HTMLDivElement | null>(null);
-  const workspaceRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
-  // natural image size
-  const [imgNatural, setImgNatural] = useState({ w: 1, h: 1 });
 
-  // internal state if controlled props not provided
-  const [internalZoom, setInternalZoom] = useState(1);
-
-  // effective scale (prop takes precedence)
-  const scale = typeof propZoom === "number" ? propZoom : internalZoom;
-
-  const [fitScale, setFitScale] = useState(1);
-  const [isFitMode, setIsFitMode] = useState(true);
-
-  // Drag panning state
+  // State
+  const [imgNatural, setImgNatural] = useState({ w: 0, h: 0 });
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
+  const [scale, setScale] = useState(1);
+  const [translate, setTranslate] = useState({ x: 0, y: 0 });
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [startTranslate, setStartTranslate] = useState({ x: 0, y: 0 });
 
-  // Flag to disable transitions for instant centering
-  const [instantTransition, setInstantTransition] = useState(false);
-
-  // local fallback for annotations
+  // Local annotations fallback
   const [localAnnotations, setLocalAnnotations] = useState<ImageAnnotation[]>([]);
   const annotations = externalAnnotations ?? localAnnotations;
-
-
 
   // Modal state
   const [modalState, setModalState] = useState<{
@@ -255,579 +246,457 @@ export default function ImageViewer({
     mode: "create",
   });
 
-  /* --------------------------
-     Calculate pan bounds for a given scale
-     Windows Photos style: No gaps allowed, image fills viewport completely
-     Uses transform-based positioning for precise control
-     -------------------------- */
-  const getPanBounds = useCallback((zoomScale: number) => {
-    const outer = outerRef.current;
-    if (!outer || imgNatural.w <= 1 || imgNatural.h <= 1) {
-      return { minX: 0, maxX: 0, minY: 0, maxY: 0, allowPanX: false, allowPanY: false };
-    }
+  // Calculate fit scale
+  const getFitScale = useCallback((imgW: number, imgH: number, contW: number, contH: number) => {
+    if (imgW === 0 || imgH === 0 || contW === 0 || contH === 0) return 1;
+    const scaleX = contW / imgW;
+    const scaleY = contH / imgH;
+    return Math.min(scaleX, scaleY);
+  }, []);
 
-    const viewportWidth = outer.clientWidth || 1;
-    const viewportHeight = outer.clientHeight || 1;
-    const scaledWidth = imgNatural.w * zoomScale;
-    const scaledHeight = imgNatural.h * zoomScale;
-
-    // Determine if panning is allowed in each direction
-    const allowPanX = scaledWidth > viewportWidth;
-    const allowPanY = scaledHeight > viewportHeight;
-
-    // Calculate maximum pan distance in scaled image coordinates
-    // This ensures the image edges never move inside the viewport
-    const maxPanX = allowPanX ? (scaledWidth - viewportWidth) / 2 : 0;
-    const maxPanY = allowPanY ? (scaledHeight - viewportHeight) / 2 : 0;
-
-    return {
-      minX: -maxPanX,
-      maxX: maxPanX,
-      minY: -maxPanY,
-      maxY: maxPanY,
-      allowPanX,
-      allowPanY
-    };
-  }, [imgNatural]);
-
-  /* --------------------------
-     Clamp pan offset to bounds
-     Ensures no gaps appear by strictly enforcing boundaries
-     -------------------------- */
-  const clampPanOffset = useCallback((pan: { x: number; y: number }, zoomScale: number) => {
-    const bounds = getPanBounds(zoomScale);
-    
-    // Strict clamping to prevent any gaps
-    const clampedX = bounds.allowPanX ? 
-      Math.max(bounds.minX, Math.min(bounds.maxX, pan.x)) : 0;
-    const clampedY = bounds.allowPanY ? 
-      Math.max(bounds.minY, Math.min(bounds.maxY, pan.y)) : 0;
-
-    return {
-      x: isFinite(clampedX) ? clampedX : 0,
-      y: isFinite(clampedY) ? clampedY : 0
-    };
-  }, [getPanBounds]);
-
-  /* --------------------------
-     Windows Photo Viewer Style Zoom Logic
-     - Discrete zoom steps
-     - Always anchored to cursor or viewport center
-     - Fit mode vs Actual Size (100%)
-     - Instant center when at/below fit scale
-     -------------------------- */
-  const setZoomAndSync = useCallback(
-    (newScale: number, anchorX?: number, anchorY?: number) => {
-      const outer = outerRef.current;
-      if (!outer) {
-        setInternalZoom(newScale);
-        onZoomChange?.(newScale);
-        return;
-      }
-
-      // Clamp zoom level to available steps
-      newScale = Math.max(ZOOM_STEPS[0], Math.min(ZOOM_STEPS[ZOOM_STEPS.length - 1], newScale));
-
-      const viewportWidth = outer.clientWidth;
-      const viewportHeight = outer.clientHeight;
-      const scaledWidth = imgNatural.w * newScale;
-      const scaledHeight = imgNatural.h * newScale;
-
-      const epsilon = 0.02; // Tolerance for fit mode detection
-
-      // Check if this is fit mode (within tolerance of fitScale)
-      const isNowFit = Math.abs(newScale - fitScale) < epsilon;
-
-      // FIT MODE: Always centered, instant transition
-      if (isNowFit) {
-        setInstantTransition(true);
-        setInternalZoom(fitScale); // Use exact fit scale
-        onZoomChange?.(fitScale);
-        setPanOffset({ x: 0, y: 0 });
-        setIsFitMode(true);
-        requestAnimationFrame(() => setInstantTransition(false));
-        return;
-      }
-
-      setIsFitMode(false);
-
-      // If image fits entirely in viewport, always center it
-      const imageFitsInViewport = scaledWidth <= viewportWidth && scaledHeight <= viewportHeight;
-      if (imageFitsInViewport) {
-        setInstantTransition(true);
-        setInternalZoom(newScale);
-        onZoomChange?.(newScale);
-        setPanOffset({ x: 0, y: 0 });
-        requestAnimationFrame(() => setInstantTransition(false));
-        return;
-      }
-
-      // Determine anchor point: cursor position or viewport center
-      let anchorScreenX: number;
-      let anchorScreenY: number;
-
-      if (anchorX !== undefined && anchorY !== undefined) {
-        // Zoom at cursor position
-        const rect = outer.getBoundingClientRect();
-        anchorScreenX = anchorX - rect.left - viewportWidth / 2;
-        anchorScreenY = anchorY - rect.top - viewportHeight / 2;
-      } else {
-        // Zoom at viewport center (toolbar controls)
-        anchorScreenX = 0;
-        anchorScreenY = 0;
-      }
-
-      // Calculate which image point is currently at the anchor
-      // With transform-based positioning, we need to account for the current transform
-      const imagePointX = anchorScreenX / scale - panOffset.x / scale;
-      const imagePointY = anchorScreenY / scale - panOffset.y / scale;
-
-      // Calculate new pan offset to keep the same image point at the anchor
-      const newPan = {
-        x: anchorScreenX - imagePointX * newScale,
-        y: anchorScreenY - imagePointY * newScale
-      };
-
-      // Clamp pan offset to bounds
-      const clampedPan = clampPanOffset(newPan, newScale);
-
-      // Apply updates
-      setInternalZoom(newScale);
-      onZoomChange?.(newScale);
-      setPanOffset(clampedPan);
-    },
-    [fitScale, onZoomChange, imgNatural, scale, panOffset, clampPanOffset]
-  );
-
-  /* --------------------------
-     Handle external zoom changes (from header controls)
-     -------------------------- */
+  // Initialize image
   useEffect(() => {
-    if (typeof propZoom === "number" && imgNatural.w > 1) {
-      // Check for fit mode signal (-1)
-      if (propZoom === -1) {
-        // Apply fit scale
-        if (fitScale > 0) {
-          setZoomAndSync(fitScale);
-        }
-      } else if (propZoom !== scale && propZoom > 0) {
-        // External zoom changed - apply it through our zoom function
-        setZoomAndSync(propZoom);
-      }
-    }
-  }, [propZoom, scale, fitScale, setZoomAndSync, imgNatural.w]);
-
-  /* --------------------------
-     Image load: set fit scale and initial view
-     Fit scale ensures image fills viewport without cropping
-     -------------------------- */
-  useEffect(() => {
-    // Reset state when URL changes
-    setImgNatural({ w: 1, h: 1 });
-    setFitScale(1);
-    setInternalZoom(1);
-    setPanOffset({ x: 0, y: 0 });
-    setIsFitMode(true);
-
+    setIsLoaded(false);
     const img = new Image();
     img.src = documentUrl;
     img.onload = () => {
-      // Ensure we have valid dimensions
-      const naturalWidth = img.naturalWidth || 1;
-      const naturalHeight = img.naturalHeight || 1;
-      
-      setImgNatural({ w: naturalWidth, h: naturalHeight });
-
-      // Wait for next frame to ensure viewport is ready
-      requestAnimationFrame(() => {
-        const outer = outerRef.current;
-        if (!outer) return;
-
-        const vw = outer.clientWidth || 1;
-        const vh = outer.clientHeight || 1;
-
-        // Calculate fit scale to show entire image without gaps
-        const s = Math.min(vw / naturalWidth, vh / naturalHeight);
-        setFitScale(s);
-
-        // Initialize at fit scale, centered with no pan offset
-        setInternalZoom(s);
-        onZoomChange?.(s);
-        setPanOffset({ x: 0, y: 0 });
-        setIsFitMode(true);
-      });
+      setImgNatural({ w: img.naturalWidth, h: img.naturalHeight });
+      setIsLoaded(true);
     };
+  }, [documentUrl]);
 
-    img.onerror = () => {
-      console.warn('Failed to load image:', documentUrl);
-      // Set fallback dimensions
-      setImgNatural({ w: 800, h: 600 });
-    };
-  }, [documentUrl, onZoomChange]);
-
-  /* --------------------------
-     Resize observer: recalc fit scale and adjust if needed
-     Ensures proper bounds when viewport size changes
-     -------------------------- */
-  useEffect(() => {
-    const outer = outerRef.current;
-    if (!outer || imgNatural.w <= 1) return;
-
-    const ro = new ResizeObserver((entries) => {
-      // Use ResizeObserver entry for more accurate dimensions
-      const entry = entries[0];
-      if (!entry) return;
-
-      const vw = entry.contentRect.width || 1;
-      const vh = entry.contentRect.height || 1;
-      
-      // Recalculate fit scale without padding to prevent gaps
-      const s = Math.min(vw / imgNatural.w, vh / imgNatural.h);
-      setFitScale(s);
-
-      // If currently in fit mode, update to new fit scale and center
-      if (isFitMode) {
-        setInternalZoom(s);
-        onZoomChange?.(s);
-        setPanOffset({ x: 0, y: 0 });
-      } else {
-        // Reclamp pan offset to new bounds to prevent gaps
-        setPanOffset(prev => clampPanOffset(prev, scale));
-      }
-    });
-
-    ro.observe(outer);
-    return () => ro.disconnect();
-  }, [imgNatural, isFitMode, onZoomChange, scale, clampPanOffset]);
-
-
-
-  /* --------------------------
-     Helper to find closest zoom step
-     -------------------------- */
-  const findClosestZoomStepIndex = useCallback((currentScale: number) => {
-    return ZOOM_STEPS.reduce((closestIdx, curr, idx) =>
-      Math.abs(curr - currentScale) < Math.abs(ZOOM_STEPS[closestIdx] - currentScale)
-        ? idx
-        : closestIdx
-      , 0);
-  }, []);
-
-  /* --------------------------
-     Wheel zoom with discrete steps (Windows Photo Viewer style)
-     Use native event listener to avoid passive listener issues
-     -------------------------- */
+  // Handle container resize
   useEffect(() => {
     const outer = outerRef.current;
     if (!outer) return;
 
-    const handleWheel = (e: WheelEvent) => {
-      // Prevent default browser scrolling
-      e.preventDefault();
-      e.stopPropagation();
-
-      const delta = -e.deltaY;
-      const zoomIn = delta > 0;
-
-      // Find closest step to current scale
-      const currentIdx = findClosestZoomStepIndex(scale);
-
-      // Move to next/previous step
-      let newIdx;
-      if (zoomIn) {
-        newIdx = Math.min(currentIdx + 1, ZOOM_STEPS.length - 1);
-      } else {
-        newIdx = Math.max(currentIdx - 1, 0);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        setContainerSize({
+          w: entry.contentRect.width,
+          h: entry.contentRect.height,
+        });
       }
+    });
 
-      const newScale = ZOOM_STEPS[newIdx];
-
-      // Disable transition for snappy zoom
-      setInstantTransition(true);
-
-      // Zoom anchored to mouse position
-      setZoomAndSync(newScale, e.clientX, e.clientY);
-
-      // Re-enable transition after a short delay
-      requestAnimationFrame(() => setInstantTransition(false));
-    };
-
-    // Add listener with passive: false to allow preventDefault
-    outer.addEventListener('wheel', handleWheel, { passive: false });
-    return () => outer.removeEventListener('wheel', handleWheel);
-  }, [scale, findClosestZoomStepIndex, setZoomAndSync]);
-
-
-  /* --------------------------
-     Drag panning handlers (Windows Photos style - no scrollbars)
-     Prevents any gaps from appearing during pan
-     -------------------------- */
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    // Only pan with left mouse button and when not clicking on annotation
-    if (e.button !== 0 || (e.target as HTMLElement).closest('[data-annotation]')) return;
-
-    const bounds = getPanBounds(scale);
-    // Only allow dragging if image is larger than viewport in at least one dimension
-    if (!bounds.allowPanX && !bounds.allowPanY) return;
-
-    setIsDragging(true);
-    setDragStart({ x: e.clientX, y: e.clientY });
-    e.preventDefault();
-  }, [getPanBounds, scale]);
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging) return;
-
-    const deltaX = e.clientX - dragStart.x;
-    const deltaY = e.clientY - dragStart.y;
-
-    // Only update if there's actual movement
-    if (Math.abs(deltaX) > 0 || Math.abs(deltaY) > 0) {
-      setPanOffset(prev => {
-        const newPan = {
-          x: prev.x + deltaX,
-          y: prev.y + deltaY
-        };
-        // Always clamp to prevent gaps
-        return clampPanOffset(newPan, scale);
-      });
-
-      setDragStart({ x: e.clientX, y: e.clientY });
-    }
-  }, [isDragging, dragStart, clampPanOffset, scale]);
-
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
+    observer.observe(outer);
+    return () => observer.disconnect();
   }, []);
 
+  // Initial fit logic - Only runs once when both image and container are ready
+  useEffect(() => {
+    if (isLoaded && imgNatural.w > 0 && containerSize.w > 0) {
+      // Only set initial fit if we haven't set it yet (or if we want to force it on load)
+      // We use a ref to track if we've done the initial fit for this document
+      const fit = getFitScale(imgNatural.w, imgNatural.h, containerSize.w, containerSize.h);
+      setScale(fit);
+      setTranslate({ x: 0, y: 0 });
+      onZoomChange?.(fit);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, imgNatural.w, imgNatural.h, documentUrl]); // Only run when image loads/changes
 
+  // Clamp translation to keep image within bounds (if larger than viewport)
+  // or center it (if smaller than viewport)
+  const clampTranslate = useCallback((x: number, y: number, s: number) => {
+    const scaledW = imgNatural.w * s;
+    const scaledH = imgNatural.h * s;
 
+    let newX = x;
+    let newY = y;
 
+    // Horizontal clamping
+    if (scaledW <= containerSize.w) {
+      newX = 0; // Center
+    } else {
+      const maxX = (scaledW - containerSize.w) / 2;
+      newX = Math.max(-maxX, Math.min(maxX, x));
+    }
 
-  /* --------------------------
-     Annotation helpers (client -> image px)
-     -------------------------- */
-  const clientToImage = (clientX: number, clientY: number) => {
-    if (!workspaceRef.current) return { x: 0, y: 0 };
-    const workspaceRect = workspaceRef.current.getBoundingClientRect();
+    // Vertical clamping
+    if (scaledH <= containerSize.h) {
+      newY = 0; // Center
+    } else {
+      const maxY = (scaledH - containerSize.h) / 2;
+      newY = Math.max(-maxY, Math.min(maxY, y));
+    }
 
-    // Calculate position relative to the scaled image
-    const localX = clientX - workspaceRect.left;
-    const localY = clientY - workspaceRect.top;
+    return { x: newX, y: newY };
+  }, [imgNatural, containerSize]);
 
-    return {
-      x: Math.round(localX / scale),
-      y: Math.round(localY / scale),
-    };
-  };
+  // Update scale and sync with prop if needed
+  const updateScale = useCallback((newScale: number, center?: { x: number, y: number }) => {
+    // Clamp scale
+    const clampedScale = Math.max(0.01, Math.min(10.0, newScale));
 
-  const onDoubleClick = useCallback((e: React.MouseEvent) => {
-    // Don't handle double-click on annotations
-    if ((e.target as HTMLElement).closest('[data-annotation]')) return;
+    setScale(prevScale => {
+      if (center) {
+        // Zoom towards point
+        // Point relative to container center
+        const relX = center.x - containerSize.w / 2;
+        const relY = center.y - containerSize.h / 2;
 
+        // Calculate new translation
+        // The point under the mouse should stay at the same screen position
+        // ScreenPos = Center + Translate + (LocalPos * Scale)
+        // We want ScreenPos to be constant.
+        // LocalPos = (ScreenPos - Center - OldTranslate) / OldScale
+
+        // Let's use a simpler delta approach:
+        // The offset from center scales up/down.
+        // NewTranslate = OldTranslate + (MousePos - OldTranslate) * (1 - NewScale/OldScale)
+        // Wait, that formula assumes MousePos is relative to image center? No.
+
+        // Correct formula for zooming into a point (cx, cy) relative to viewport center:
+        // newTx = cx - (cx - oldTx) * (newScale / oldScale)
+        // newTy = cy - (cy - oldTy) * (newScale / oldScale)
+
+        // Where cx, cy are coordinates of the mouse relative to the center of the viewport
+        // (which is also the origin of our translation system)
+
+        // Let's verify:
+        // Mouse is at 100px right of center. translate is 0. scale is 1.
+        // We zoom to 2.
+        // newTx = 100 - (100 - 0) * (2/1) = 100 - 200 = -100.
+        // Image moves 100px left.
+        // Point that was at 100px is now at: 0 + (-100) + (original_local_x * 2).
+        // original_local_x for point at 100 was 100.
+        // New pos = -100 + 200 = 100. Correct.
+
+        setTranslate(prevTranslate => {
+          const cx = center.x - containerSize.w / 2;
+          const cy = center.y - containerSize.h / 2;
+
+          const newTx = cx - (cx - prevTranslate.x) * (clampedScale / prevScale);
+          const newTy = cy - (cy - prevTranslate.y) * (clampedScale / prevScale);
+
+          return clampTranslate(newTx, newTy, clampedScale);
+        });
+      } else {
+        // Just center zoom or fit
+        setTranslate(prev => clampTranslate(prev.x, prev.y, clampedScale));
+      }
+      return clampedScale;
+    });
+
+    onZoomChange?.(clampedScale);
+  }, [containerSize, clampTranslate, onZoomChange]);
+
+  // Handle external zoom prop changes
+  useEffect(() => {
+    if (typeof propZoom === "number" && propZoom > 0 && Math.abs(propZoom - scale) > 0.001) {
+      updateScale(propZoom);
+    } else if (propZoom === -1) {
+      // Fit command
+      const fit = getFitScale(imgNatural.w, imgNatural.h, containerSize.w, containerSize.h);
+      updateScale(fit);
+    }
+  }, [propZoom, imgNatural, containerSize, getFitScale, updateScale]); // Removed 'scale' to avoid loops
+
+  // Wheel Zoom
+  const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
-    const epsilon = 0.01;
+    const delta = -e.deltaY;
+    const zoomIn = delta > 0;
 
-    // Windows Photo Viewer behavior: Toggle between Fit and Actual Size (100%)
-    if (scale >= ACTUAL_SIZE - epsilon) {
-      // Currently at or above 100% → Go to Fit (centered)
-      setZoomAndSync(fitScale);
+    // Find next step
+    const currentStepIdx = ZOOM_STEPS.findIndex(s => s >= scale);
+    let nextScale = scale;
+
+    if (zoomIn) {
+      // If exact match, go next. If between, go to next larger.
+      const nextIdx = ZOOM_STEPS.findIndex(s => s > scale + 0.001);
+      if (nextIdx !== -1) nextScale = ZOOM_STEPS[nextIdx];
+      else nextScale = ZOOM_STEPS[ZOOM_STEPS.length - 1];
     } else {
-      // Currently below 100% (fit or zoomed out) → Go to Actual Size, anchored at click
-      setZoomAndSync(ACTUAL_SIZE, e.clientX, e.clientY);
+      // Find first step smaller than current
+      // We iterate backwards or just find last one < scale
+      let prevIdx = -1;
+      for (let i = ZOOM_STEPS.length - 1; i >= 0; i--) {
+        if (ZOOM_STEPS[i] < scale - 0.001) {
+          prevIdx = i;
+          break;
+        }
+      }
+      if (prevIdx !== -1) nextScale = ZOOM_STEPS[prevIdx];
+      else nextScale = ZOOM_STEPS[0];
     }
-  }, [scale, fitScale, setZoomAndSync]);
 
+    // Get mouse position relative to viewport
+    const rect = outerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    updateScale(nextScale, { x: mouseX, y: mouseY });
+  }, [scale, updateScale]);
+
+  useEffect(() => {
+    const outer = outerRef.current;
+    if (!outer) return;
+    outer.addEventListener('wheel', handleWheel, { passive: false });
+    return () => outer.removeEventListener('wheel', handleWheel);
+  }, [handleWheel]);
+
+  // Drag Pan
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest('[data-annotation]')) return;
+    e.preventDefault();
+
+    setIsDragging(true);
+    setDragStart({ x: e.clientX, y: e.clientY });
+    setStartTranslate({ ...translate });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    e.preventDefault();
+
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+
+    const newTx = startTranslate.x + dx;
+    const newTy = startTranslate.y + dy;
+
+    setTranslate(clampTranslate(newTx, newTy, scale));
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  // Double Click
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('[data-annotation]')) return;
+
+    const fit = getFitScale(imgNatural.w, imgNatural.h, containerSize.w, containerSize.h);
+    // If close to fit, zoom to 1.0. Else zoom to fit.
+    if (Math.abs(scale - fit) < 0.01) {
+      updateScale(1.0, { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY }); // Zoom to 100% at mouse? Or center? Windows viewer zooms to 100% at mouse.
+      // offsetX is relative to target, which might be image. We need relative to container.
+      const rect = outerRef.current?.getBoundingClientRect();
+      if (rect) {
+        updateScale(1.0, { x: e.clientX - rect.left, y: e.clientY - rect.top });
+      }
+    } else {
+      updateScale(fit);
+    }
+  };
+
+  // Annotations coordinate conversion
+  const clientToImage = (clientX: number, clientY: number) => {
+    if (!outerRef.current) return { x: 0, y: 0 };
+    const rect = outerRef.current.getBoundingClientRect();
+
+    // Mouse relative to container center
+    const cx = clientX - rect.left - rect.width / 2;
+    const cy = clientY - rect.top - rect.height / 2;
+
+    // Apply inverse transform
+    // Screen = Translate + Scale * Local
+    // Local = (Screen - Translate) / Scale
+    const localX = (cx - translate.x) / scale;
+    const localY = (cy - translate.y) / scale;
+
+    // Local (0,0) is center of image
+    // Image coords (0,0) is top-left
+    return {
+      x: Math.round(localX + imgNatural.w / 2),
+      y: Math.round(localY + imgNatural.h / 2)
+    };
+  };
+
+  const handleImageClick = (e: React.MouseEvent) => {
+    if (e.button === 2 || e.ctrlKey) {
+      e.preventDefault();
+      const pos = clientToImage(e.clientX, e.clientY);
+      if (pos.x < 0 || pos.y < 0 || pos.x > imgNatural.w || pos.y > imgNatural.h) return;
+      setModalState({ isOpen: true, mode: "create", position: pos });
+    }
+  };
+
+  // Fullscreen
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      outerRef.current?.requestFullscreen().then(() => setIsFullscreen(true)).catch(console.error);
+    } else {
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(console.error);
+    }
+  };
+
+  useEffect(() => {
+    const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  // Annotation handlers
   const handleAnnotationSave = (content: string, color: string) => {
     if (modalState.mode === "create" && modalState.position) {
-      // Create new annotation
-      if (onAnnotationCreate) {
-        onAnnotationCreate({
-          type: "image",
-          documentId,
-          xPixel: modalState.position.x,
-          yPixel: modalState.position.y,
-          content,
-          color,
-        });
-      } else {
-        // Local fallback
-        const newAnnotation: ImageAnnotation = {
-          id: crypto.randomUUID(),
-          type: "image",
-          documentId,
-          xPixel: modalState.position.x,
-          yPixel: modalState.position.y,
-          content,
-          color,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        setLocalAnnotations((prev) => [...prev, newAnnotation]);
+      const newAnn = {
+        type: "image" as const,
+        documentId,
+        xPixel: modalState.position.x,
+        yPixel: modalState.position.y,
+        content,
+        color,
+      };
+      if (onAnnotationCreate) onAnnotationCreate(newAnn);
+      else {
+        setLocalAnnotations(prev => [...prev, { ...newAnn, id: crypto.randomUUID(), createdAt: new Date(), updatedAt: new Date() }]);
       }
     } else if (modalState.mode === "edit" && modalState.annotation) {
-      // Update existing annotation
-      if (onAnnotationUpdate) {
-        onAnnotationUpdate(modalState.annotation.id, { content, color });
-      } else {
-        // Local fallback
-        setLocalAnnotations((prev) =>
-          prev.map((a) =>
-            a.id === modalState.annotation!.id
-              ? { ...a, content, color, updatedAt: new Date() }
-              : a
-          )
-        );
+      if (onAnnotationUpdate) onAnnotationUpdate(modalState.annotation.id, { content, color });
+      else {
+        setLocalAnnotations(prev => prev.map(a => a.id === modalState.annotation!.id ? { ...a, content, color, updatedAt: new Date() } : a));
       }
     }
   };
 
   const handleAnnotationDelete = () => {
     if (modalState.annotation) {
-      if (onAnnotationDelete) {
-        onAnnotationDelete(modalState.annotation.id);
-      } else {
-        // Local fallback
-        setLocalAnnotations((prev) => prev.filter((a) => a.id !== modalState.annotation!.id));
-      }
+      if (onAnnotationDelete) onAnnotationDelete(modalState.annotation.id);
+      else setLocalAnnotations(prev => prev.filter(a => a.id !== modalState.annotation!.id));
     }
   };
 
-  const handleAnnotationClick = (annotation: ImageAnnotation, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setModalState({
-      isOpen: true,
-      mode: "edit",
-      annotation,
-    });
-  };
-
-  const handleImageClick = (e: React.MouseEvent) => {
-    // Right-click or Ctrl+click to create annotation
-    if (e.button === 2 || e.ctrlKey) {
-      e.preventDefault();
-      const pos = clientToImage(e.clientX, e.clientY);
-      if (pos.x < 0 || pos.y < 0 || pos.x > imgNatural.w || pos.y > imgNatural.h) return;
-
-      setModalState({
-        isOpen: true,
-        mode: "create",
-        position: pos,
-      });
-    }
-  };
-
-  /* --------------------------
-     Render
-     -------------------------- */
-  const bounds = getPanBounds(scale);
-  const canPan = bounds.allowPanX || bounds.allowPanY;
+  const fitScale = getFitScale(imgNatural.w, imgNatural.h, containerSize.w, containerSize.h);
+  const zoomPercent = Math.round(scale * 100);
 
   return (
     <div
-      className={`w-full h-full ${className}`}
-      style={{
-        overflow: 'hidden',
-        position: 'relative',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
+      ref={outerRef}
+      className={`relative w-full h-full bg-black overflow-hidden select-none ${className}`}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      onDoubleClick={handleDoubleClick}
+      onClick={handleImageClick}
+      onContextMenu={(e) => e.preventDefault()}
+      style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
     >
-      {/* OUTER VIEWPORT - Windows Photos style container with fixed viewport */}
+      {/* Centered Wrapper */}
       <div
-        ref={outerRef}
-        className="w-full h-full bg-navy-800"
+        className="absolute left-1/2 top-1/2 will-change-transform"
         style={{
-          cursor: isDragging ? 'grabbing' : (canPan ? 'grab' : 'default'),
-          overflow: 'hidden',
-          position: 'relative',
+          width: 0,
+          height: 0,
+          transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`
         }}
-        onDoubleClick={onDoubleClick}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onClick={handleImageClick}
-        onContextMenu={(e) => e.preventDefault()}
       >
-        {/* WRAPPER - provides centering and contains scaled image */}
+        {/* Image centered on wrapper origin */}
         <div
           style={{
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            overflow: 'hidden',
-            position: 'relative',
+            width: imgNatural.w,
+            height: imgNatural.h,
+            position: 'absolute',
+            left: -imgNatural.w / 2,
+            top: -imgNatural.h / 2,
+            pointerEvents: 'none' // Let events pass to wrapper/container for dragging, but we need clicks for annotations?
+            // Actually we handle clicks on container.
           }}
         >
-          {/* IMAGE WRAPPER - scales and pans the image, anchored to center */}
-          <div
-            ref={workspaceRef}
-            style={{
-              position: 'absolute',
-              width: imgNatural.w,
-              height: imgNatural.h,
-              transform: `scale(${scale}) translate(${panOffset.x / scale}px, ${panOffset.y / scale}px)`,
-              transformOrigin: 'center center',
-              transition: (isDragging || instantTransition) ? 'none' : 'transform 0.2s ease-out',
-              willChange: isDragging ? 'transform' : 'auto',
-              left: '50%',
-              top: '50%',
-              marginLeft: `${-imgNatural.w / 2}px`,
-              marginTop: `${-imgNatural.h / 2}px`,
-            }}
-          >
-            {/* IMAGE LAYER */}
-            <img
-              ref={imageRef}
-              src={documentUrl}
-              alt="doc"
-              draggable={false}
-              style={{
-                width: '100%',
-                height: '100%',
-                display: 'block',
-                userSelect: 'none',
-                pointerEvents: 'none',
-              }}
-            />
+          <img
+            ref={imageRef}
+            src={documentUrl}
+            alt="view"
+            draggable={false}
+            className="w-full h-full block"
+          />
 
-            {/* PIXEL-LOCKED NOTES */}
-            {annotations.map((a) => (
-              <div
-                key={a.id}
-                data-annotation
-                style={{
-                  position: "absolute",
-                  left: a.xPixel,
-                  top: a.yPixel,
-                  transform: "translate(-50%, -100%)",
-                  zIndex: 20,
-                }}
-              >
-                <div
-                  className="px-2 py-1 rounded shadow cursor-pointer border-2 text-xs font-medium transition-transform hover:scale-110"
-                  style={{
-                    backgroundColor: a.color || "#FFEB3B",
-                    borderColor: a.color ? `${a.color}CC` : "#F9A825",
-                    color: "#000",
-                  }}
-                  onClick={(ev) => handleAnnotationClick(a, ev)}
-                  title={a.content}
-                >
-                  📝
-                </div>
-              </div>
-            ))}
-          </div>
+          {/* Annotations */}
+          {annotations.map((annotation) => (
+            <div
+              key={annotation.id}
+              className="absolute w-6 h-6 -ml-3 -mt-3 rounded-full border-2 border-white shadow-md cursor-pointer transform hover:scale-125 transition-transform z-10 flex items-center justify-center text-xs font-bold text-black pointer-events-auto"
+              style={{
+                left: annotation.xPixel,
+                top: annotation.yPixel,
+                backgroundColor: annotation.color || "#FFEB3B",
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setModalState({ isOpen: true, mode: "edit", annotation });
+              }}
+              data-annotation="true"
+              title={annotation.content}
+            >
+              !
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Annotation Modal */}
+      {/* Vertical Toolbar (Right Center) */}
+      <div
+        className="absolute right-6 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 px-2 py-3 bg-navy-900/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl z-50 transition-all"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {/* Zoom In */}
+        <button
+          onClick={() => {
+            const currentIdx = ZOOM_STEPS.findIndex(s => s > scale + 0.001);
+            const nextIdx = currentIdx === -1 ? ZOOM_STEPS.length - 1 : currentIdx;
+            updateScale(ZOOM_STEPS[nextIdx]);
+          }}
+          className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+          title="Zoom In"
+        >
+          <Plus size={20} />
+        </button>
+
+        {/* Zoom Out */}
+        <button
+          onClick={() => {
+            const currentIdx = ZOOM_STEPS.findIndex(s => s >= scale - 0.001);
+            const prevIdx = Math.max(0, currentIdx - 1);
+            updateScale(ZOOM_STEPS[prevIdx]);
+          }}
+          className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+          title="Zoom Out"
+        >
+          <Minus size={20} />
+        </button>
+
+        <div className="w-4 h-px bg-white/20 my-1" />
+
+        {/* Fit / Actual Size */}
+        <button
+          onClick={() => {
+            if (Math.abs(scale - fitScale) < 0.01) {
+              updateScale(1.0);
+            } else {
+              updateScale(fitScale);
+            }
+          }}
+          className={`p-2 rounded-xl transition-colors ${Math.abs(scale - fitScale) < 0.01
+            ? "text-blue-400 bg-white/10"
+            : "text-white/80 hover:text-white hover:bg-white/10"
+            }`}
+          title={Math.abs(scale - fitScale) < 0.01 ? "Zoom to Actual Size" : "Fit to Screen"}
+        >
+          <Scan size={20} />
+        </button>
+
+        {/* Fullscreen */}
+        <button
+          onClick={toggleFullscreen}
+          className={`p-2 rounded-xl transition-colors ${isFullscreen
+            ? "text-blue-400 bg-white/10"
+            : "text-white/80 hover:text-white hover:bg-white/10"
+            }`}
+          title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+        >
+          {isFullscreen ? <Shrink size={20} /> : <Expand size={20} />}
+        </button>
+      </div>
+
       <AnnotationModal
         isOpen={modalState.isOpen}
         mode={modalState.mode}
@@ -836,8 +705,8 @@ export default function ImageViewer({
         createdAt={modalState.annotation?.createdAt}
         updatedAt={modalState.annotation?.updatedAt}
         onSave={handleAnnotationSave}
-        onDelete={modalState.mode === "edit" ? handleAnnotationDelete : undefined}
-        onClose={() => setModalState({ isOpen: false, mode: "create" })}
+        onDelete={handleAnnotationDelete}
+        onClose={() => setModalState({ ...modalState, isOpen: false })}
       />
     </div>
   );

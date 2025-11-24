@@ -24,7 +24,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
 }) => {
   const { state, dispatch } = useAppContext();
   const { viewerState, isNotePanelOpen } = state;
-  
+
   // Use annotations hook
   const {
     annotations,
@@ -82,7 +82,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
   const handleDocumentLoad = useCallback((totalPages?: number) => {
     dispatch({
       type: 'SET_VIEWER_STATE',
-      payload: { 
+      payload: {
         isLoading: false,
         totalPages: totalPages || 0,
         // Reset to page 1 if this is a new document
@@ -138,15 +138,15 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
     if (viewerType === 'docx' && documentUrl) {
       setDocxLoading(true);
       setDocxError(null);
-      
+
       fetch(documentUrl)
         .then(res => res.arrayBuffer())
-        .then(arrayBuffer => 
+        .then(arrayBuffer =>
           mammoth.convertToHtml({ arrayBuffer }, {
             styleMap: [
               "p[style-name='Normal'] => p:fresh",
               "p[style-name='Heading 1'] => h1:fresh",
-              "p[style-name='Heading 2'] => h2:fresh", 
+              "p[style-name='Heading 2'] => h2:fresh",
               "p[style-name='Heading 3'] => h3:fresh",
               "p[style-name='Title'] => h1.title:fresh",
               "r[style-name='Strong'] => strong:fresh",
@@ -157,7 +157,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
         .then(result => {
           const html = result.value;
           setDocxHtml(html);
-          
+
           // Split into pages based on page breaks or content length
           const pageBreaks = html.split(/<hr\s*\/?>/i);
           if (pageBreaks.length > 1) {
@@ -172,7 +172,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
             }
             setDocxPages(pages.length > 1 ? pages : [html]);
           }
-          
+
           setDocxCurrentPage(0);
           setDocxLoading(false);
           handleDocumentLoad(pageBreaks.length > 1 ? pageBreaks.length : Math.ceil(html.split(' ').length / 500));
@@ -245,26 +245,26 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
             onAnnotationCreate={handleAnnotationCreate}
             onAnnotationUpdate={handleAnnotationUpdate}
             onAnnotationDelete={handleAnnotationDelete}
-            annotations={annotations.filter((ann): ann is import('../contexts/AppContext').DocumentAnnotation => 
+            annotations={annotations.filter((ann): ann is import('../contexts/AppContext').DocumentAnnotation =>
               ann.type === 'document'
             )}
             onAnnotationClick={handleAnnotationClick}
           />
         );
-      
+
       case 'image':
         // Immediately set loading to false for images
         if (viewerState.isLoading) {
           handleDocumentLoad(1);
         }
-        
+
         return (
           <ImageViewer
             documentUrl={documentUrl}
             documentId={documentId}
             zoomScale={viewerState.zoomScale}
             onZoomChange={handleZoomChange}
-            annotations={annotations.filter((ann): ann is import('../contexts/AppContext').ImageAnnotation => 
+            annotations={annotations.filter((ann): ann is import('../contexts/AppContext').ImageAnnotation =>
               ann.type === 'image'
             )}
             onAnnotationCreate={async (annotation) => {
@@ -276,13 +276,14 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
             onAnnotationDelete={async (id) => {
               await deleteAnnotation(id);
             }}
+            onToggleSidePanel={handleToggleNotePanel}
           />
         );
-      
+
       case 'docx':
         if (docxLoading) {
           return (
-            <motion.div 
+            <motion.div
               className="flex items-center justify-center h-full"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -298,7 +299,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
         if (docxError) {
           return (
-            <motion.div 
+            <motion.div
               className="flex items-center justify-center h-full"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -314,7 +315,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
         if (docxPages.length === 0) {
           return (
-            <motion.div 
+            <motion.div
               className="flex items-center justify-center h-full"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -328,14 +329,14 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
         }
 
         return (
-          <motion.div 
+          <motion.div
             className="flex flex-col h-full"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3 }}
           >
             {/* DOCX Toolbar */}
-            <motion.div 
+            <motion.div
               className="bg-navy-900 border-b border-navy-700 p-3 flex items-center justify-between"
               initial={{ y: -20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -383,8 +384,8 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
                 >
                   <ZoomOut size={16} />
                 </motion.button>
-                
-                <motion.span 
+
+                <motion.span
                   className="text-off-white text-sm px-3 min-w-[60px] text-center"
                   key={Math.round(viewerState.zoomScale * 100)}
                   initial={{ opacity: 0, scale: 0.8 }}
@@ -393,7 +394,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
                 >
                   {Math.round(viewerState.zoomScale * 100)}%
                 </motion.span>
-                
+
                 <motion.button
                   onClick={handleZoomIn}
                   className="p-2 rounded bg-navy-800 text-off-white hover:bg-navy-700"
@@ -403,7 +404,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
                 >
                   <ZoomIn size={16} />
                 </motion.button>
-                
+
                 <motion.button
                   onClick={handleResetZoom}
                   className="p-2 rounded bg-navy-800 text-off-white hover:bg-navy-700"
@@ -418,7 +419,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
 
             {/* DOCX Content */}
             <div className="flex-1 bg-white overflow-auto">
-              <div 
+              <div
                 className="max-w-4xl mx-auto p-8"
                 style={{
                   transform: `scale(${viewerState.zoomScale})`,
@@ -436,25 +437,25 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5 }}
-                  dangerouslySetInnerHTML={{ 
-                    __html: docxPages[docxCurrentPage] || docxHtml 
+                  dangerouslySetInnerHTML={{
+                    __html: docxPages[docxCurrentPage] || docxHtml
                   }}
                 />
               </div>
             </div>
           </motion.div>
         );
-      
+
       case 'unsupported':
         return (
-          <motion.div 
+          <motion.div
             className="flex items-center justify-center h-full"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.4 }}
           >
             <div className="text-center text-gray-400">
-              <motion.div 
+              <motion.div
                 className="text-6xl mb-4"
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
@@ -462,7 +463,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
               >
                 📄
               </motion.div>
-              <motion.h3 
+              <motion.h3
                 className="text-xl font-semibold text-off-white mb-2"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -470,7 +471,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
               >
                 Unsupported File Type
               </motion.h3>
-              <motion.p 
+              <motion.p
                 className="mb-2"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -478,7 +479,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
               >
                 Cannot display files of type: {mimeType}
               </motion.p>
-              <motion.p 
+              <motion.p
                 className="text-sm"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -486,7 +487,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
               >
                 Supported formats: PDF, PNG, JPG, JPEG, DOC, DOCX
               </motion.p>
-              <motion.div 
+              <motion.div
                 className="mt-4 p-3 bg-navy-800 rounded-lg border border-navy-700"
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -498,17 +499,17 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
             </div>
           </motion.div>
         );
-      
+
       default:
         return (
-          <motion.div 
+          <motion.div
             className="flex items-center justify-center h-full"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3 }}
           >
             <div className="text-center text-gray-400">
-              <motion.div 
+              <motion.div
                 className="rounded-full h-12 w-12 border-b-2 border-ocean-blue mx-auto mb-4"
                 animate={{ rotate: 360 }}
                 transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
@@ -545,11 +546,11 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
           </AnimatePresence>
         )}
       </div>
-      
+
       {/* Loading overlay - skip for images */}
       <AnimatePresence>
         {viewerState.isLoading && viewerType !== 'image' && (
-          <motion.div 
+          <motion.div
             className="absolute inset-0 bg-navy-800/80 backdrop-blur-sm flex items-center justify-center z-20"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -557,12 +558,12 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
             transition={{ duration: 0.2 }}
           >
             <div className="text-center">
-              <motion.div 
+              <motion.div
                 className="rounded-full h-12 w-12 border-b-2 border-ocean-blue mx-auto mb-4"
                 animate={{ rotate: 360 }}
                 transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
               />
-              <motion.p 
+              <motion.p
                 className="text-off-white"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
