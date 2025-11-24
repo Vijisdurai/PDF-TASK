@@ -634,7 +634,7 @@ export default function ImageViewer({
 
       {/* Vertical Toolbar (Right Center) */}
       <div
-        className="absolute right-6 top-1/2 -translate-y-1/2 flex flex-col items-center gap-2 px-2 py-3 bg-navy-900/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl z-50 transition-all"
+        className="group absolute right-16 top-1/2 -translate-y-1/2 flex flex-col items-center gap-1.5 px-1.5 py-2.5 bg-navy-900/90 backdrop-blur-xl border border-white/10 hover:border-blue-400/50 rounded-xl shadow-2xl hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] z-50 transition-all duration-300"
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -645,10 +645,10 @@ export default function ImageViewer({
             const nextIdx = currentIdx === -1 ? ZOOM_STEPS.length - 1 : currentIdx;
             updateScale(ZOOM_STEPS[nextIdx]);
           }}
-          className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+          className="p-1.5 text-blue-400 bg-white/5 backdrop-blur-sm border border-white/10 hover:bg-white/10 hover:text-blue-300 hover:border-white/20 rounded-lg transition-all"
           title="Zoom In"
         >
-          <Plus size={20} />
+          <Plus size={18} />
         </button>
 
         {/* Zoom Out */}
@@ -658,13 +658,13 @@ export default function ImageViewer({
             const prevIdx = Math.max(0, currentIdx - 1);
             updateScale(ZOOM_STEPS[prevIdx]);
           }}
-          className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+          className="p-1.5 text-blue-400 bg-white/5 backdrop-blur-sm border border-white/10 hover:bg-white/10 hover:text-blue-300 hover:border-white/20 rounded-lg transition-all"
           title="Zoom Out"
         >
-          <Minus size={20} />
+          <Minus size={18} />
         </button>
 
-        <div className="w-4 h-px bg-white/20 my-1" />
+        <div className="w-3.5 h-px bg-white/20 my-0.5" />
 
         {/* Fit / Actual Size */}
         <button
@@ -675,25 +675,22 @@ export default function ImageViewer({
               updateScale(fitScale);
             }
           }}
-          className={`p-2 rounded-xl transition-colors ${Math.abs(scale - fitScale) < 0.01
-            ? "text-blue-400 bg-white/10"
-            : "text-white/80 hover:text-white hover:bg-white/10"
-            }`}
+          className="p-1.5 text-blue-400 bg-white/5 backdrop-blur-sm border border-white/10 hover:bg-white/10 hover:text-blue-300 hover:border-white/20 rounded-lg transition-all"
           title={Math.abs(scale - fitScale) < 0.01 ? "Zoom to Actual Size" : "Fit to Screen"}
         >
-          <Scan size={20} />
+          <Scan size={18} />
         </button>
 
         {/* Fullscreen */}
         <button
           onClick={toggleFullscreen}
-          className={`p-2 rounded-xl transition-colors ${isFullscreen
-            ? "text-blue-400 bg-white/10"
-            : "text-white/80 hover:text-white hover:bg-white/10"
+          className={`p-1.5 backdrop-blur-sm border rounded-lg transition-all ${isFullscreen
+            ? "text-blue-400 bg-blue-500/10 border-blue-400/30 hover:bg-blue-500/20 hover:text-blue-300"
+            : "text-blue-400 bg-white/5 border-white/10 hover:bg-white/10 hover:text-blue-300 hover:border-white/20"
             }`}
           title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
         >
-          {isFullscreen ? <Shrink size={20} /> : <Expand size={20} />}
+          {isFullscreen ? <Shrink size={18} /> : <Expand size={18} />}
         </button>
       </div>
 
