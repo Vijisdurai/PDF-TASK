@@ -161,17 +161,20 @@ const Header: React.FC = () => {
                 const newScale = Number(e.target.value) / 100;
                 dispatch({ type: 'SET_VIEWER_STATE', payload: { zoomScale: newScale } });
               }}
-              className="px-3 py-1.5 text-sm text-off-white bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all border border-white/10 hover:border-white/20 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-3 py-1.5 text-sm text-off-white bg-navy-800 hover:bg-navy-700 rounded-lg transition-all border border-white/10 hover:border-white/20 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={{
+                colorScheme: 'dark'
+              }}
               title="Zoom Level"
             >
               {[25, 33, 50, 75, 100, 125, 150, 200, 300, 400].map((preset) => (
-                <option key={preset} value={preset}>
+                <option key={preset} value={preset} className="bg-navy-800 text-off-white">
                   {preset}%
                 </option>
               ))}
               {![25, 33, 50, 75, 100, 125, 150, 200, 300, 400].includes(Math.round(state.viewerState.zoomScale * 100)) &&
                 Math.round(state.viewerState.zoomScale * 100) > 0 && (
-                  <option value={Math.round(state.viewerState.zoomScale * 100)}>
+                  <option value={Math.round(state.viewerState.zoomScale * 100)} className="bg-navy-800 text-off-white">
                     {Math.round(state.viewerState.zoomScale * 100)}%
                   </option>
                 )}
