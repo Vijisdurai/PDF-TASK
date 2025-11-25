@@ -10,14 +10,7 @@ import DocumentViewer from '../components/DocumentViewer';
 import { apiService } from '../services/api';
 import type { Annotation } from '../contexts/AppContext';
 
-interface AnnotationPoint {
-  id: string;
-  x: number;
-  y: number;
-  page?: number;
-  content?: string;
-  timestamp: number;
-}
+
 
 const DocumentViewerPage: React.FC = () => {
   const { documentId } = useParams<{ documentId: string }>();
@@ -25,7 +18,6 @@ const DocumentViewerPage: React.FC = () => {
   const { showToast } = useToast();
   
   const {
-    createAnnotation,
     updateAnnotation,
     deleteAnnotation,
   } = useAnnotations(documentId);
@@ -48,28 +40,6 @@ const DocumentViewerPage: React.FC = () => {
     }
   }, [document, dispatch]);
 
-  // Handle annotation creation
-  const handleAnnotationCreate = useCallback(async (annotation: Omit<AnnotationPoint, 'id' | 'timestamp'>) => {
-    if (!documentId) return;
-
-    const newAnnotation: Omit<import('../contexts/AppContext').DocumentAnnotation, 'id' | 'createdAt' | 'updatedAt'> = {
-      documentId,
-      type: 'document',
-      xPercent: annotation.x,
-      yPercent: annotation.y,
-      page: annotation.page || state.viewerState.currentPage,
-      content: annotation.content || '',
-    };
-
-    try {
-      await createAnnotation(newAnnotation);
-      showToast('Annotation created', 'success', 2000);
-    } catch (error) {
-      console.error('Failed to save annotation:', error);
-      showToast('Failed to create annotation', 'error');
-    }
-  }, [documentId, createAnnotation, state.viewerState.currentPage, showToast]);
-
   // Get document annotations
   const documentAnnotations = state.annotations.filter(a => a.documentId === documentId);
   const currentPageAnnotations = documentAnnotations.filter(a => 
@@ -77,16 +47,14 @@ const DocumentViewerPage: React.FC = () => {
   );
 
   // Handle annotation click from marker
-  const handleAnnotationClick = useCallback((annotation: AnnotationPoint) => {
-    const fullAnnotation = state.annotations.find(a => a.id === annotation.id);
-    if (fullAnnotation) {
-      // Open notes panel if it's closed
-      if (!state.isNotePanelOpen) {
-        dispatch({ type: 'TOGGLE_NOTE_PANEL' });
-      }
-      setSelectedNote(fullAnnotation);
+  const handleAnnotationClick = useCallback((annotation: Annotation) => {
+    // Open notes panel if it's closed
+    if (!state.isNotePanelOpen) {
+      dispatch({ type: 'TOGGLE_NOTE_PANEL' });
     }
-  }, [state.annotations, state.isNotePanelOpen, dispatch]);
+    // Set selected annotation for display
+    setSelectedNote(annotation);
+  }, [state.isNotePanelOpen, dispatch]);
 
   // Handle note click from list
   const handleNoteClick = useCallback((annotation: Annotation) => {
@@ -169,18 +137,6 @@ const DocumentViewerPage: React.FC = () => {
   if (!document) {
     return <Navigate to="/" replace />;
   }
-
-  // Convert database annotations to overlay format
-  const overlayAnnotations: AnnotationPoint[] = documentAnnotations
-    .filter((ann): ann is import('../contexts/AppContext').DocumentAnnotation => ann.type === 'document')
-    .map(ann => ({
-      id: ann.id,
-      x: ann.xPercent,
-      y: ann.yPercent,
-      page: ann.page,
-      content: ann.content,
-      timestamp: ann.createdAt.getTime()
-    }));
 
   // Construct document URL for viewing using the API service
   const documentUrl = apiService.getDocumentFileUrl(document.id);

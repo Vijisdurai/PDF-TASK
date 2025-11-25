@@ -276,7 +276,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
             onAnnotationDelete={async (id) => {
               await deleteAnnotation(id);
             }}
-            onToggleSidePanel={handleToggleNotePanel}
+            onAnnotationClick={handleAnnotationClick}
           />
         );
 

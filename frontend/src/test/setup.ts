@@ -10,6 +10,13 @@ Object.defineProperty(navigator, 'onLine', {
   value: true,
 });
 
+// Mock ResizeObserver
+global.ResizeObserver = class ResizeObserver {
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+};
+
 // Mock framer-motion
 vi.mock('framer-motion', async (importOriginal) => {
   const actual = await importOriginal<typeof import('framer-motion')>();

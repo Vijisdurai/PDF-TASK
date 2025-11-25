@@ -282,8 +282,8 @@ class ApiService {
       return {
         annotation_type: 'image',
         document_id: annotation.documentId,
-        x_pixel: annotation.xPixel,
-        y_pixel: annotation.yPixel,
+        x_pixel: Math.round(annotation.xPixel),
+        y_pixel: Math.round(annotation.yPixel),
         content: annotation.content,
         color: annotation.color,
       };
@@ -311,11 +311,11 @@ class ApiService {
     }
 
     if ('xPixel' in updates && updates.xPixel !== undefined) {
-      payload.x_pixel = updates.xPixel;
+      payload.x_pixel = Math.round(updates.xPixel);
     }
 
     if ('yPixel' in updates && updates.yPixel !== undefined) {
-      payload.y_pixel = updates.yPixel;
+      payload.y_pixel = Math.round(updates.yPixel);
     }
 
     if ('color' in updates && updates.color !== undefined) {

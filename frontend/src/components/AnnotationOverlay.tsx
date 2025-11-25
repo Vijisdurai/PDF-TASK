@@ -13,7 +13,8 @@ interface AnnotationOverlayProps {
   documentHeight: number;
   scale?: number; // For images
   panOffset?: { x: number; y: number }; // For images
-  onAnnotationClick: (id: string) => void;
+  isDragging?: boolean; // For images
+  onAnnotationClick: (annotation: Annotation) => void;
   onCreateAnnotation: (x: number, y: number, content: string) => void;
 }
 
@@ -27,6 +28,7 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
   documentHeight,
   scale = 1,
   panOffset = { x: 0, y: 0 },
+  isDragging = false,
   onAnnotationClick,
   onCreateAnnotation
 }) => {
@@ -57,27 +59,39 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
     const relativeY = screenY - rect.top;
 
     if (documentType === 'image') {
-      // For images: pixel-based coordinates with scale transform
-      const xPixel = (relativeX - panOffset.x) / scale;
-      const yPixel = (relativeY - panOffset.y) / scale;
+      // For images: pixel-based coordinates relative to top-left
+      const centerX = containerWidth / 2;
+      const centerY = containerHeight / 2;
+
+      // Calculate distance from center in screen pixels, then unscale
+      // xPixel = (screenDelta / scale) + (width / 2)
+      const xPixel = (relativeX - centerX - panOffset.x) / scale + documentWidth / 2;
+      const yPixel = (relativeY - centerY - panOffset.y) / scale + documentHeight / 2;
+
       return { x: xPixel, y: yPixel };
     } else {
       // For PDF/DOCX: percentage-based coordinates
       const xPercent = (relativeX / documentWidth) * 100;
       const yPercent = (relativeY / documentHeight) * 100;
-      return { 
-        x: Math.max(0, Math.min(100, xPercent)), 
-        y: Math.max(0, Math.min(100, yPercent)) 
+      return {
+        x: Math.max(0, Math.min(100, xPercent)),
+        y: Math.max(0, Math.min(100, yPercent))
       };
     }
-  }, [documentType, documentWidth, documentHeight, scale, panOffset]);
+  }, [documentType, documentWidth, documentHeight, containerWidth, containerHeight, scale, panOffset]);
 
   // Coordinate transformation: storage to screen
   const storageToScreen = useCallback((annotation: Annotation): { x: number; y: number } => {
     if (isImageAnnotation(annotation)) {
       // For images: apply scale transform to pixel coordinates
-      const screenX = annotation.xPixel * scale + panOffset.x;
-      const screenY = annotation.yPixel * scale + panOffset.y;
+      const centerX = containerWidth / 2;
+      const centerY = containerHeight / 2;
+
+      // Convert from top-left based pixel coords to screen coords
+      // screenX = (xPixel - width/2) * scale + centerX + panOffset
+      const screenX = (annotation.xPixel - documentWidth / 2) * scale + panOffset.x + centerX;
+      const screenY = (annotation.yPixel - documentHeight / 2) * scale + panOffset.y + centerY;
+
       return { x: screenX, y: screenY };
     } else if (isDocumentAnnotation(annotation)) {
       // For PDF/DOCX: convert percentage to screen coordinates
@@ -87,10 +101,12 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
     }
 
     return { x: 0, y: 0 };
-  }, [documentWidth, documentHeight, scale, panOffset]);
+  }, [documentWidth, documentHeight, containerWidth, containerHeight, scale, panOffset]);
 
   // Handle double-click for annotation creation
   const handleDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (isDragging) return;
+
     event.preventDefault();
     event.stopPropagation();
 
@@ -102,7 +118,7 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
       storageX: coords.x,
       storageY: coords.y
     });
-  }, [screenToStorage]);
+  }, [screenToStorage, isDragging]);
 
   // Handle annotation input save
   const handleInputSave = useCallback((content: string) => {
@@ -119,18 +135,21 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
 
   // Handle marker click
   const handleMarkerClick = useCallback((annotationId: string) => {
-    onAnnotationClick(annotationId);
-  }, [onAnnotationClick]);
+    const annotation = annotations.find(a => a.id === annotationId);
+    if (annotation) {
+      onAnnotationClick(annotation);
+    }
+  }, [annotations, onAnnotationClick]);
 
   // Filter annotations by current page for PDF/DOCX documents
   const filteredAnnotations = (documentType === 'pdf' || documentType === 'docx')
-    ? annotations.filter(annotation => 
-        isDocumentAnnotation(annotation) && annotation.page === currentPage
-      )
+    ? annotations.filter(annotation =>
+      isDocumentAnnotation(annotation) && annotation.page === currentPage
+    )
     : annotations;
 
   // Calculate sequential marker numbers based on creation order
-  const sortedAnnotations = [...filteredAnnotations].sort((a, b) => 
+  const sortedAnnotations = [...filteredAnnotations].sort((a, b) =>
     new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   );
 
