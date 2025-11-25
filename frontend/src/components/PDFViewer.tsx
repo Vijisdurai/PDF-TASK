@@ -60,12 +60,14 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
   const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
   const [documentDimensions, setDocumentDimensions] = useState({ width: 0, height: 0 });
   const [baseDocumentSize, setBaseDocumentSize] = useState({ width: 0, height: 0 }); // Size at scale=1
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   // Load PDF document
   useEffect(() => {
     const loadPDF = async () => {
       try {
         setState(prev => ({ ...prev, isLoading: true, error: null }));
+        setInitialLoadComplete(false);
 
         const response = await fetch(documentUrl, { mode: "cors" });
 
@@ -135,6 +137,46 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
     }
   }, [documentUrl, onDocumentLoad]);
 
+  // Helper to calculate fit scales
+  const getFitScale = useCallback((type: 'page' | 'width', baseWidth: number, baseHeight: number) => {
+    if (!containerRef.current || baseWidth === 0 || baseHeight === 0) return 1;
+
+    const container = containerRef.current;
+    const padding = 48; // Chrome-like padding
+    const availableWidth = container.clientWidth - padding;
+    const availableHeight = container.clientHeight - padding;
+
+    const scaleX = availableWidth / baseWidth;
+    const scaleY = availableHeight / baseHeight;
+
+    if (type === 'width') {
+      return scaleX;
+    }
+    return Math.min(scaleX, scaleY);
+  }, []);
+
+  // Handle initial load (Fit to Width) and special zoom commands
+  useEffect(() => {
+    if (state.pdfDocument && !state.isLoading && baseDocumentSize.width > 0) {
+      // Initial Load -> Fit to Width
+      if (!initialLoadComplete) {
+        const fitWidthScale = getFitScale('width', baseDocumentSize.width, baseDocumentSize.height);
+        if (fitWidthScale > 0) {
+          onZoomChange(fitWidthScale);
+          setInitialLoadComplete(true);
+        }
+      }
+      // Handle special zoom commands from Header
+      else if (zoomScale === -1) { // Fit to Page
+        const scale = getFitScale('page', baseDocumentSize.width, baseDocumentSize.height);
+        if (scale > 0) onZoomChange(scale);
+      } else if (zoomScale === -2) { // Fit to Width
+        const scale = getFitScale('width', baseDocumentSize.width, baseDocumentSize.height);
+        if (scale > 0) onZoomChange(scale);
+      }
+    }
+  }, [state.pdfDocument, state.isLoading, baseDocumentSize, zoomScale, initialLoadComplete, getFitScale, onZoomChange]);
+
   // Render current page with proper task cancellation
   const renderPage = useCallback(async () => {
     if (!state.pdfDocument || !canvasRef.current) return;
@@ -153,12 +195,23 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
       const context = canvas.getContext('2d', { willReadFrequently: true });
       if (!context) return;
 
-      // Calculate viewport with zoom
-      const viewport = page.getViewport({ scale: zoomScale });
-
       // Store base size (at scale=1) for fit calculations and annotations
       const baseViewport = page.getViewport({ scale: 1 });
       setBaseDocumentSize({ width: baseViewport.width, height: baseViewport.height });
+
+      // Calculate viewport with zoom
+      let effectiveScale = zoomScale;
+
+      // Handle special scales locally for this render if they haven't been updated in state yet
+      if (effectiveScale <= 0) {
+        const baseW = baseViewport.width;
+        const baseH = baseViewport.height;
+        if (effectiveScale === -1) effectiveScale = getFitScale('page', baseW, baseH);
+        else if (effectiveScale === -2) effectiveScale = getFitScale('width', baseW, baseH);
+        else effectiveScale = 1; // Fallback
+      }
+
+      const viewport = page.getViewport({ scale: effectiveScale });
 
       // Set canvas dimensions to scaled size
       canvas.width = viewport.width;
@@ -189,15 +242,9 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
         if (containerRef.current && hasCenteredRef.current !== documentUrl) {
           hasCenteredRef.current = documentUrl;
           requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              if (containerRef.current) {
-                const container = containerRef.current;
-                const centerX = (container.scrollWidth - container.clientWidth) / 2;
-                const centerY = (container.scrollHeight - container.clientHeight) / 2;
-                container.scrollLeft = centerX;
-                container.scrollTop = centerY;
-              }
-            });
+            if (containerRef.current) {
+              containerRef.current.scrollTop = 0;
+            }
           });
         }
       } catch (error: any) {
@@ -210,7 +257,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
     } catch (error) {
       console.error('Error setting up page render:', error);
     }
-  }, [state.pdfDocument, currentPage, zoomScale, documentUrl]);
+  }, [state.pdfDocument, currentPage, zoomScale, documentUrl, getFitScale]);
 
   // Re-render when page, zoom, or document changes
   useEffect(() => {
@@ -241,8 +288,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
-
-
   // Handle mouse wheel for zoom (Ctrl+scroll)
   const handleWheel = useCallback((event: React.WheelEvent) => {
     // Only handle Ctrl/Cmd + scroll for zooming
@@ -252,13 +297,13 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
 
       const delta = event.deltaY > 0 ? -0.1 : 0.1;
       const prevScale = zoomScale;
-      const newScale = Math.max(0.25, Math.min(3, prevScale + delta));
+      const baseScale = prevScale > 0 ? prevScale : 1;
+      const newScale = Math.max(0.25, Math.min(5, baseScale + delta));
 
       if (newScale === prevScale) return;
 
       onZoomChange(newScale);
     }
-    // Otherwise, let the browser handle normal scrolling (both vertical and horizontal)
   }, [zoomScale, onZoomChange]);
 
   // Drag scrolling handlers
@@ -295,39 +340,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
     setIsDragging(false);
   }, []);
 
-
-
-  // Navigation functions
-
-
-
-
-
-  // Fit to width - scales document to fit viewport width
-
-  // Fit to page - scales document to fit entire page in viewport
-  const handleFitToPage = useCallback(() => {
-    if (baseDocumentSize.width === 0 || baseDocumentSize.height === 0 || !containerRef.current) return;
-
-    const containerWidth = containerRef.current.offsetWidth;
-    const containerHeight = containerRef.current.offsetHeight;
-    const padding = 40;
-    const availableWidth = containerWidth - padding;
-    const availableHeight = containerHeight - padding;
-
-    const scaleX = availableWidth / baseDocumentSize.width;
-    const scaleY = availableHeight / baseDocumentSize.height;
-
-    // Use the smaller scale to ensure entire page fits
-    const fitScale = Math.min(scaleX, scaleY, 3);
-
-    if (fitScale > 0) {
-      onZoomChange(fitScale);
-    }
-  }, [baseDocumentSize, onZoomChange]);
-
-  // Legacy fit-to-screen (alias for fit-to-page)
-
   if (state.isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -355,7 +367,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
       {/* Canvas container */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-auto bg-navy-800 scroll-smooth"
+        className="flex-1 overflow-auto bg-[#525659] scroll-smooth"
         style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
@@ -370,7 +382,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
           <div className="relative m-auto">
             <canvas
               ref={canvasRef}
-              className="shadow-lg border border-navy-600"
+              className="shadow-2xl"
               style={{ display: 'block' }}
             />
 
@@ -384,9 +396,8 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
                 containerHeight={containerDimensions.height}
                 documentWidth={documentDimensions.width}
                 documentHeight={documentDimensions.height}
-                onAnnotationClick={(id) => {
-                  const annotation = annotations.find(a => a.id === id);
-                  if (annotation && onAnnotationClick) {
+                onAnnotationClick={(annotation) => {
+                  if (onAnnotationClick) {
                     onAnnotationClick(annotation);
                   }
                 }}

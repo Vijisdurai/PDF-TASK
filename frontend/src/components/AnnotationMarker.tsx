@@ -15,17 +15,17 @@ interface AnnotationMarkerProps {
 const calculateLuminance = (hexColor: string): number => {
   // Remove # if present
   const hex = hexColor.replace('#', '');
-  
+
   // Parse RGB values
   const r = parseInt(hex.substring(0, 2), 16) / 255;
   const g = parseInt(hex.substring(2, 4), 16) / 255;
   const b = parseInt(hex.substring(4, 6), 16) / 255;
-  
+
   // Apply gamma correction
   const rLinear = r <= 0.03928 ? r / 12.92 : Math.pow((r + 0.055) / 1.055, 2.4);
   const gLinear = g <= 0.03928 ? g / 12.92 : Math.pow((g + 0.055) / 1.055, 2.4);
   const bLinear = b <= 0.03928 ? b / 12.92 : Math.pow((b + 0.055) / 1.055, 2.4);
-  
+
   // Calculate relative luminance
   return 0.2126 * rLinear + 0.7152 * gLinear + 0.0722 * bLinear;
 };
@@ -38,7 +38,7 @@ const getTextColor = (backgroundColor: string): string => {
   if (backgroundColor.toUpperCase() === '#FFFFFF' || backgroundColor.toUpperCase() === '#FFF') {
     return '#000000';
   }
-  
+
   // Calculate luminance and use black text for high luminance backgrounds
   const luminance = calculateLuminance(backgroundColor);
   return luminance > 0.9 ? '#000000' : '#FFFFFF';
@@ -52,7 +52,7 @@ const AnnotationMarker: React.FC<AnnotationMarkerProps> = ({
   isHighlighted = false
 }) => {
   const textColor = getTextColor(color);
-  
+
   return (
     <div
       className="absolute cursor-pointer transition-transform duration-200 hover:scale-110"

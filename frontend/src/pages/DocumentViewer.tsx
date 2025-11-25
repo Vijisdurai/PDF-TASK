@@ -16,7 +16,7 @@ const DocumentViewerPage: React.FC = () => {
   const { documentId } = useParams<{ documentId: string }>();
   const { state, dispatch } = useAppContext();
   const { showToast } = useToast();
-  
+
   const {
     updateAnnotation,
     deleteAnnotation,
@@ -42,7 +42,7 @@ const DocumentViewerPage: React.FC = () => {
 
   // Get document annotations
   const documentAnnotations = state.annotations.filter(a => a.documentId === documentId);
-  const currentPageAnnotations = documentAnnotations.filter(a => 
+  const currentPageAnnotations = documentAnnotations.filter(a =>
     a.type === 'document' && a.page === state.viewerState.currentPage
   );
 
@@ -122,7 +122,7 @@ const DocumentViewerPage: React.FC = () => {
       setShowDeleteConfirm(false);
       setShowEditModal(false);
       setSelectedNote(null);
-      
+
       // Then perform the delete operation in the background
       try {
         await deleteAnnotation(selectedNote.id);
@@ -140,10 +140,10 @@ const DocumentViewerPage: React.FC = () => {
 
   // Construct document URL for viewing using the API service
   const documentUrl = apiService.getDocumentFileUrl(document.id);
-  
+
   // Determine the effective MIME type - if document has been converted to PDF, use PDF MIME type
   const effectiveMimeType = document.convertedPath ? 'application/pdf' : document.mimeType;
-  const effectiveFilename = document.convertedPath 
+  const effectiveFilename = document.convertedPath
     ? `${document.originalFilename || document.filename}.pdf`
     : (document.originalFilename || document.filename);
 
@@ -154,7 +154,7 @@ const DocumentViewerPage: React.FC = () => {
   return (
     <div className="flex h-full overflow-hidden">
       {/* Main viewer area - no scroll, DocumentViewer handles its own scrolling */}
-      <div 
+      <div
         className="flex-1 bg-navy-800 border-r border-navy-700 overflow-hidden"
         style={{ marginRight: state.isNotePanelOpen ? '320px' : '0' }}
       >
@@ -208,7 +208,7 @@ const DocumentViewerPage: React.FC = () => {
               </div>
             )}
           </div>
-          
+
           {/* Content - scrollable, takes remaining space */}
           <div className="flex-1 overflow-y-auto px-4 py-3 min-h-0 border-l border-navy-700">
             {selectedNote ? (
@@ -248,7 +248,7 @@ const DocumentViewerPage: React.FC = () => {
                     </div>
                   </div>
                 )}
-                
+
                 {!isEditingInline && selectedNote.type === 'image' && selectedNote.color && (
                   <div className="mt-3 flex items-center justify-between text-xs">
                     <span className="text-gray-400">Marker Color</span>
@@ -269,7 +269,7 @@ const DocumentViewerPage: React.FC = () => {
               currentPageAnnotations.length > 0 ? (
                 <div className="space-y-2.5">
                   {currentPageAnnotations.map((annotation, index) => (
-                    <div 
+                    <div
                       key={annotation.id}
                       className="flex gap-3 items-start"
                     >
@@ -277,16 +277,16 @@ const DocumentViewerPage: React.FC = () => {
                       <div className="flex-shrink-0 w-6 h-6 rounded-full bg-ocean-blue/80 text-white flex items-center justify-center text-xs font-semibold mt-0.5">
                         {index + 1}
                       </div>
-                      
+
                       {/* Content box - clickable */}
-                      <div 
+                      <div
                         onClick={() => handleNoteClick(annotation)}
                         className="flex-1 min-w-0 bg-white/5 backdrop-blur-sm rounded-lg p-3.5 border border-white/10 cursor-pointer hover:bg-white/10 hover:border-ocean-blue/40 transition-all duration-200"
                       >
                         <div className="text-off-white text-sm leading-relaxed whitespace-pre-wrap break-words mb-2.5 line-clamp-3">
                           {annotation.content}
                         </div>
-                        
+
                         {/* Footer with timestamp and user */}
                         <div className="flex items-center justify-between text-xs text-gray-400 pt-2 border-t border-white/10">
                           <div className="flex items-center gap-1.5">

@@ -232,6 +232,8 @@ export default function ImageViewer({
   const handleDoubleClick = (e: React.MouseEvent) => {
     // Zoom logic removed to allow double-click for annotations
     e.preventDefault();
+
+
   };
 
   // Fullscreen
