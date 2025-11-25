@@ -271,8 +271,26 @@ export default function ImageViewer({
   };
 
   const handleAnnotationClick = (annotation: import("../contexts/AppContext").Annotation) => {
-    if (onAnnotationClick) {
-      onAnnotationClick(annotation);
+    // Exit fullscreen if active so the notes panel becomes visible
+    if (document.fullscreenElement) {
+      document.exitFullscreen().then(() => {
+        setIsFullscreen(false);
+        // Call the callback after exiting fullscreen
+        if (onAnnotationClick) {
+          onAnnotationClick(annotation);
+        }
+      }).catch((err) => {
+        console.error('Failed to exit fullscreen:', err);
+        // Call the callback anyway even if fullscreen exit fails
+        if (onAnnotationClick) {
+          onAnnotationClick(annotation);
+        }
+      });
+    } else {
+      // Not in fullscreen, just call the callback
+      if (onAnnotationClick) {
+        onAnnotationClick(annotation);
+      }
     }
   };
 
@@ -338,7 +356,7 @@ export default function ImageViewer({
 
       {/* Vertical Toolbar (Left Center) */}
       <div
-        className="group absolute left-6 top-1/2 -translate-y-1/2 flex flex-col items-center gap-1.5 px-1.5 py-2.5 bg-navy-900/90 backdrop-blur-xl border border-white/10 hover:border-blue-400/50 rounded-xl shadow-2xl hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] z-50 transition-all duration-300"
+        className="group absolute left-6 top-1/2 -translate-y-1/2 flex flex-col items-center gap-1.5 px-1.5 py-2.5 bg-black/20 backdrop-blur-sm border border-white/5 hover:border-white/10 rounded-xl shadow-lg z-50 transition-all duration-300"
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -349,7 +367,7 @@ export default function ImageViewer({
             const nextIdx = currentIdx === -1 ? ZOOM_STEPS.length - 1 : currentIdx;
             updateScale(ZOOM_STEPS[nextIdx]);
           }}
-          className="p-1.5 text-blue-400 bg-white/5 backdrop-blur-sm border border-white/10 hover:bg-white/10 hover:text-blue-300 hover:border-white/20 rounded-lg transition-all"
+          className="p-1.5 text-white/70 bg-transparent border border-transparent hover:bg-white/10 hover:text-white hover:border-white/15 rounded-lg transition-all"
           title="Zoom In"
         >
           <Plus size={18} />
@@ -362,7 +380,7 @@ export default function ImageViewer({
             const prevIdx = Math.max(0, currentIdx - 1);
             updateScale(ZOOM_STEPS[prevIdx]);
           }}
-          className="p-1.5 text-blue-400 bg-white/5 backdrop-blur-sm border border-white/10 hover:bg-white/10 hover:text-blue-300 hover:border-white/20 rounded-lg transition-all"
+          className="p-1.5 text-white/70 bg-transparent border border-transparent hover:bg-white/10 hover:text-white hover:border-white/15 rounded-lg transition-all"
           title="Zoom Out"
         >
           <Minus size={18} />
@@ -379,7 +397,7 @@ export default function ImageViewer({
               updateScale(fitScale);
             }
           }}
-          className="p-1.5 text-blue-400 bg-white/5 backdrop-blur-sm border border-white/10 hover:bg-white/10 hover:text-blue-300 hover:border-white/20 rounded-lg transition-all"
+          className="p-1.5 text-white/70 bg-transparent border border-transparent hover:bg-white/10 hover:text-white hover:border-white/15 rounded-lg transition-all"
           title={Math.abs(scale - fitScale) < 0.01 ? "Zoom to Actual Size" : "Fit to Screen"}
         >
           <Scan size={18} />
@@ -388,9 +406,9 @@ export default function ImageViewer({
         {/* Fullscreen */}
         <button
           onClick={toggleFullscreen}
-          className={`p-1.5 backdrop-blur-sm border rounded-lg transition-all ${isFullscreen
-            ? "text-blue-400 bg-blue-500/10 border-blue-400/30 hover:bg-blue-500/20 hover:text-blue-300"
-            : "text-blue-400 bg-white/5 border-white/10 hover:bg-white/10 hover:text-blue-300 hover:border-white/20"
+          className={`p-1.5 border rounded-lg transition-all ${isFullscreen
+            ? "text-white bg-white/20 border-white/20 hover:bg-white/25 hover:text-white"
+            : "text-white/70 bg-transparent border-transparent hover:bg-white/10 hover:text-white hover:border-white/15"
             }`}
           title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
         >
