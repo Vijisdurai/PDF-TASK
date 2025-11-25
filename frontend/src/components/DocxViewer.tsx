@@ -1,187 +1,309 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import mammoth from 'mammoth';
-import { FileText, Download, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import AnnotationOverlay from './AnnotationOverlay';
+import type { Annotation } from '../contexts/AppContext';
 
 interface DocxViewerProps {
   documentUrl: string;
   documentId: string;
   filename: string;
-  onDocumentLoad?: () => void;
+  currentPage: number;
+  zoomScale: number;
+  onPageChange: (page: number) => void;
+  onZoomChange: (scale: number) => void;
+  onDocumentLoad?: (totalPages: number) => void;
+  onAnnotationCreate?: (xPercent: number, yPercent: number, content: string) => void;
+  onAnnotationUpdate?: (id: string, content: string) => void;
+  onAnnotationDelete?: (id: string) => void;
+  annotations?: Annotation[];
+  onAnnotationClick?: (annotation: Annotation) => void;
+}
+
+interface DocxViewerState {
+  htmlContent: string;
+  pages: string[];
+  isLoading: boolean;
+  error: string | null;
 }
 
 const DocxViewer: React.FC<DocxViewerProps> = ({
   documentUrl,
-  documentId,
-  filename,
-  onDocumentLoad
+  currentPage,
+  zoomScale,
+  onPageChange,
+  onZoomChange,
+  onDocumentLoad,
+  onAnnotationCreate,
+  annotations = [],
+  onAnnotationClick
 }) => {
-  const [htmlContent, setHtmlContent] = useState<string>('');
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [scrollStart, setScrollStart] = useState({ x: 0, y: 0 });
+  const [state, setState] = useState<DocxViewerState>({
+    htmlContent: '',
+    pages: [],
+    isLoading: true,
+    error: null
+  });
+  const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
+  const [documentDimensions, setDocumentDimensions] = useState({ width: 0, height: 0 });
 
-  const loadDocx = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // Fetch the DOCX file as ArrayBuffer
-      const response = await fetch(documentUrl);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const arrayBuffer = await response.arrayBuffer();
-
-      // Convert DOCX to HTML using Mammoth.js
-      const result = await mammoth.convertToHtml({ arrayBuffer });
-      
-      if (result.messages.length > 0) {
-        console.warn('Mammoth conversion warnings:', result.messages);
-      }
-
-      setHtmlContent(result.value);
-      setIsLoading(false);
-
-      if (onDocumentLoad) {
-        onDocumentLoad();
-      }
-    } catch (err) {
-      console.error('Error loading DOCX:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load Word document');
-      setIsLoading(false);
-    }
-  }, [documentUrl, onDocumentLoad]);
-
+  // Load DOCX document
   useEffect(() => {
+    const loadDocx = async () => {
+      try {
+        setState(prev => ({ ...prev, isLoading: true, error: null }));
+
+        const response = await fetch(documentUrl);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const result = await mammoth.convertToHtml({ arrayBuffer }, {
+          styleMap: [
+            "p[style-name='Normal'] => p:fresh",
+            "p[style-name='Heading 1'] => h1:fresh",
+            "p[style-name='Heading 2'] => h2:fresh",
+            "p[style-name='Heading 3'] => h3:fresh",
+            "p[style-name='Title'] => h1.title:fresh",
+            "r[style-name='Strong'] => strong:fresh",
+            "r[style-name='Emphasis'] => em:fresh"
+          ]
+        });
+
+        const html = result.value;
+
+        // Split into pages
+        const pageBreaks = html.split(/<hr\s*\/?>/i);
+        let pages = [];
+        if (pageBreaks.length > 1) {
+          pages = pageBreaks;
+        } else {
+          const words = html.split(' ');
+          const wordsPerPage = 500;
+          for (let i = 0; i < words.length; i += wordsPerPage) {
+            pages.push(words.slice(i, i + wordsPerPage).join(' '));
+          }
+          if (pages.length === 0) pages = [html];
+        }
+
+        setState({
+          htmlContent: html,
+          pages,
+          isLoading: false,
+          error: null
+        });
+
+        if (onDocumentLoad) {
+          onDocumentLoad(pages.length);
+        }
+      } catch (err) {
+        console.error('Error loading DOCX:', err);
+        setState(prev => ({
+          ...prev,
+          isLoading: false,
+          error: err instanceof Error ? err.message : 'Failed to load Word document'
+        }));
+      }
+    };
+
     if (documentUrl) {
       loadDocx();
     }
-  }, [loadDocx]);
+  }, [documentUrl, onDocumentLoad]);
 
-  const handleDownload = useCallback(() => {
-    const link = document.createElement('a');
-    link.href = documentUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }, [documentUrl, filename]);
+  // Update container dimensions
+  useEffect(() => {
+    const updateDimensions = () => {
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        setContainerDimensions({ width: rect.width, height: rect.height });
+      }
+    };
 
-  if (isLoading) {
+    updateDimensions();
+    window.addEventListener('resize', updateDimensions);
+    return () => window.removeEventListener('resize', updateDimensions);
+  }, []);
+
+  // Update document dimensions when page renders or zoom changes
+  useEffect(() => {
+    if (pageRef.current) {
+      setDocumentDimensions({
+        width: pageRef.current.offsetWidth,
+        height: pageRef.current.offsetHeight
+      });
+    }
+  }, [state.pages, currentPage, zoomScale]);
+
+  // Handle mouse wheel for zoom
+  const handleWheel = useCallback((event: React.WheelEvent) => {
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const delta = event.deltaY > 0 ? -0.1 : 0.1;
+      const prevScale = zoomScale;
+      const baseScale = prevScale > 0 ? prevScale : 1;
+      const newScale = Math.max(0.25, Math.min(5, baseScale + delta));
+
+      if (newScale !== prevScale) {
+        onZoomChange(newScale);
+      }
+    }
+  }, [zoomScale, onZoomChange]);
+
+  // Drag scrolling handlers
+  const handleMouseDown = useCallback((event: React.MouseEvent) => {
+    if (event.button !== 0) return;
+    // Don't start drag if clicking on text (allow selection)
+    // But PDF viewer allows drag everywhere. 
+    // To allow text selection, we might want to check target.
+    // However, requirement says "Pan with pointer drag".
+    // Let's allow drag if not on an interactive element?
+    // For now, replicate PDF behavior: drag everywhere.
+    // If text selection is needed, user can't drag.
+    // PDF.js usually handles this by allowing drag on background.
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    setIsDragging(true);
+    setDragStart({ x: event.clientX, y: event.clientY });
+    setScrollStart({ x: container.scrollLeft, y: container.scrollTop });
+    // event.preventDefault(); // Prevent default to stop text selection? 
+    // If we want text selection, we shouldn't prevent default, but then drag might interfere.
+    // PDF viewer usually uses a "hand tool" mode vs "text selection" mode.
+    // The requirement says "Pan with pointer drag".
+    // I will enable drag and prevent default for now to match "Pan" behavior.
+    event.preventDefault();
+  }, []);
+
+  const handleMouseMove = useCallback((event: React.MouseEvent) => {
+    if (!isDragging) return;
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    const deltaX = event.clientX - dragStart.x;
+    const deltaY = event.clientY - dragStart.y;
+
+    container.scrollLeft = scrollStart.x - deltaX;
+    container.scrollTop = scrollStart.y - deltaY;
+  }, [isDragging, dragStart, scrollStart]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  if (state.isLoading) {
     return (
-      <motion.div
-        className="flex items-center justify-center h-full"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.2 }}
-      >
+      <div className="flex items-center justify-center h-full">
         <div className="text-center">
-          <motion.div
-            className="flex items-center justify-center mb-4"
-            animate={{ rotate: 360 }}
-            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-          >
-            <Loader2 className="w-12 h-12 text-ocean-blue" />
-          </motion.div>
-          <p className="text-off-white">Converting Word document...</p>
+          <div className="w-2 h-2 bg-ocean-blue rounded-full mx-auto mb-4 opacity-75" />
+          <p className="text-off-white text-sm">Loading Document...</p>
         </div>
-      </motion.div>
+      </div>
     );
   }
 
-  if (error) {
+  if (state.error) {
     return (
-      <motion.div
-        className="flex items-center justify-center h-full"
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.3 }}
-      >
-        <div className="text-center">
-          <motion.div
-            className="text-6xl mb-4"
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ duration: 0.5, type: "spring" }}
-          >
-            📄
-          </motion.div>
-          <h3 className="text-xl font-semibold text-red-400 mb-2">
-            Failed to Load Document
-          </h3>
-          <p className="text-gray-400 mb-4">{error}</p>
-          <motion.button
-            onClick={handleDownload}
-            className="inline-flex items-center px-4 py-2 bg-ocean-blue text-white rounded-lg hover:bg-blue-600 transition-colors"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <Download size={16} className="mr-2" />
-            Download Original
-          </motion.button>
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center text-red-400">
+          <p className="text-lg font-semibold mb-2">Error</p>
+          <p>{state.error}</p>
         </div>
-      </motion.div>
+      </div>
     );
   }
 
   return (
-    <motion.div
-      className="flex flex-col h-full"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3 }}
-    >
-      {/* Toolbar */}
-      <motion.div
-        className="bg-navy-900 border-b border-navy-700 p-3 flex items-center justify-between"
-        initial={{ y: -20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.3, delay: 0.1 }}
+    <div className="flex flex-col h-full">
+      <div
+        ref={containerRef}
+        className="flex-1 overflow-auto bg-[#525659] scroll-smooth"
+        style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
       >
-        <div className="flex items-center space-x-2">
-          <FileText size={16} className="text-off-white" />
-          <span className="text-off-white text-sm">Word Document</span>
-        </div>
+        <div className="p-4 min-h-full min-w-full flex justify-center">
+          <div className="relative">
+            {/* Page Content */}
+            <div
+              ref={pageRef}
+              className="bg-white shadow-2xl origin-top-center"
+              style={{
+                width: '816px', // Standard Letter width approx
+                minHeight: '1056px', // Standard Letter height approx
+                padding: '48px', // 0.5 inch margins
+                transform: `scale(${zoomScale})`,
+                transformOrigin: 'top center',
+                transition: isDragging ? 'none' : 'transform 0.1s ease-out'
+              }}
+            >
+              <div
+                className="prose prose-lg max-w-none"
+                style={{
+                  color: '#1f2937',
+                  lineHeight: '1.7',
+                  fontFamily: 'Georgia, serif'
+                }}
+                dangerouslySetInnerHTML={{
+                  __html: state.pages[currentPage - 1] || ''
+                }}
+              />
+            </div>
 
-        <div className="flex items-center space-x-2">
-          <motion.button
-            onClick={handleDownload}
-            className="p-2 rounded bg-navy-800 text-off-white hover:bg-navy-700"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            transition={{ duration: 0.1 }}
-            title="Download Original"
-          >
-            <Download size={16} />
-          </motion.button>
+            {/* Annotation Overlay */}
+            {onAnnotationCreate && documentDimensions.width > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: documentDimensions.width,
+                  height: documentDimensions.height,
+                  pointerEvents: 'none' // Let clicks pass through to overlay content
+                }}
+              >
+                <AnnotationOverlay
+                  annotations={annotations}
+                  documentType="docx"
+                  currentPage={currentPage}
+                  containerWidth={containerDimensions.width}
+                  containerHeight={containerDimensions.height}
+                  documentWidth={documentDimensions.width}
+                  documentHeight={documentDimensions.height}
+                  onAnnotationClick={(annotation) => {
+                    if (onAnnotationClick) {
+                      onAnnotationClick(annotation);
+                    }
+                  }}
+                  onCreateAnnotation={(x, y, content) => {
+                    if (onAnnotationCreate) {
+                      onAnnotationCreate(x, y, content);
+                    }
+                  }}
+                />
+              </div>
+            )}
+          </div>
         </div>
-      </motion.div>
-
-      {/* Document content */}
-      <motion.div
-        className="flex-1 overflow-auto bg-white"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.2 }}
-      >
-        <div className="max-w-4xl mx-auto p-8">
-          <motion.div
-            className="prose prose-lg max-w-none"
-            style={{
-              color: '#1f2937',
-              lineHeight: '1.7'
-            }}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-            dangerouslySetInnerHTML={{ __html: htmlContent }}
-          />
-        </div>
-      </motion.div>
-    </motion.div>
+      </div>
+    </div>
   );
 };
 
