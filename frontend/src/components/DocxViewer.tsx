@@ -1,6 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import mammoth from 'mammoth';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { renderAsync } from 'docx-preview';
 import AnnotationOverlay from './AnnotationOverlay';
 import type { Annotation } from '../contexts/AppContext';
 
@@ -21,10 +20,16 @@ interface DocxViewerProps {
 }
 
 interface DocxViewerState {
-  htmlContent: string;
-  pages: string[];
   isLoading: boolean;
   error: string | null;
+}
+
+interface PageLayout {
+  pageIndex: number;
+  top: number;
+  left: number;
+  width: number;
+  height: number;
 }
 
 const DocxViewer: React.FC<DocxViewerProps> = ({
@@ -39,82 +44,159 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
   onAnnotationClick
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const pageRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [scrollStart, setScrollStart] = useState({ x: 0, y: 0 });
   const [state, setState] = useState<DocxViewerState>({
-    htmlContent: '',
-    pages: [],
     isLoading: true,
     error: null
   });
   const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
-  const [documentDimensions, setDocumentDimensions] = useState({ width: 0, height: 0 });
+  const [pageLayouts, setPageLayouts] = useState<PageLayout[]>([]);
 
   // Load DOCX document
   useEffect(() => {
+    let isMounted = true;
+    const abortController = new AbortController();
+
     const loadDocx = async () => {
+      // Wait for contentRef to be available if it's not yet
+      if (!contentRef.current) {
+        console.warn('DocxViewer: contentRef is null, retrying in 100ms');
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (!contentRef.current) {
+          console.error('DocxViewer: contentRef still null after retry');
+          return;
+        }
+      }
+
+      if (!documentUrl) {
+        console.warn('DocxViewer: No documentUrl provided');
+        if (isMounted) {
+          setState(prev => ({ ...prev, isLoading: false, error: 'No document URL provided' }));
+          if (onDocumentLoad) onDocumentLoad(0);
+        }
+        return;
+      }
+
+      console.log('DocxViewer: Starting load for', documentUrl);
+
       try {
         setState(prev => ({ ...prev, isLoading: true, error: null }));
 
-        const response = await fetch(documentUrl);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const arrayBuffer = await response.arrayBuffer();
-        const result = await mammoth.convertToHtml({ arrayBuffer }, {
-          styleMap: [
-            "p[style-name='Normal'] => p:fresh",
-            "p[style-name='Heading 1'] => h1:fresh",
-            "p[style-name='Heading 2'] => h2:fresh",
-            "p[style-name='Heading 3'] => h3:fresh",
-            "p[style-name='Title'] => h1.title:fresh",
-            "r[style-name='Strong'] => strong:fresh",
-            "r[style-name='Emphasis'] => em:fresh"
-          ]
+        // Create a timeout promise
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Loading timed out after 15s')), 15000);
         });
 
-        const html = result.value;
+        // Fetch blob
+        const fetchPromise = fetch(documentUrl, { signal: abortController.signal })
+          .then(async res => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            return res.blob();
+          });
 
-        // Split into pages
-        const pageBreaks = html.split(/<hr\s*\/?>/i);
-        let pages = [];
-        if (pageBreaks.length > 1) {
-          pages = pageBreaks;
-        } else {
-          const words = html.split(' ');
-          const wordsPerPage = 500;
-          for (let i = 0; i < words.length; i += wordsPerPage) {
-            pages.push(words.slice(i, i + wordsPerPage).join(' '));
-          }
-          if (pages.length === 0) pages = [html];
-        }
+        const blob = await Promise.race([fetchPromise, timeoutPromise]) as Blob;
+
+        console.log('DocxViewer: Fetched blob size:', blob.size);
+
+        if (!isMounted || !contentRef.current) return;
+
+        // Clear previous content
+        contentRef.current.innerHTML = '';
+
+        console.log('DocxViewer: Calling renderAsync...');
+
+        // Render with docx-preview
+        await Promise.race([
+          renderAsync(blob, contentRef.current, contentRef.current, {
+            className: 'docx-content',
+            inWrapper: false,
+            ignoreWidth: false,
+            ignoreHeight: false,
+            ignoreFonts: false,
+            breakPages: true,
+            ignoreLastRenderedPageBreak: false,
+            experimental: true,
+            trimXmlDeclaration: true,
+            useBase64URL: true,
+            renderChanges: false,
+            debug: true,
+          }),
+          timeoutPromise
+        ]);
+
+        console.log('DocxViewer: renderAsync completed');
+        console.log('DocxViewer: Rendered HTML length:', contentRef.current.innerHTML.length);
+
+        if (!isMounted) return;
 
         setState({
-          htmlContent: html,
-          pages,
           isLoading: false,
           error: null
         });
 
+        // Detect pages and store their layouts
+        const pageElements = contentRef.current.querySelectorAll('section.docx-page, div.docx-page');
+        console.log('DocxViewer: Detected pages:', pageElements.length);
+
+        const layouts: PageLayout[] = [];
+
+        if (pageElements.length > 0) {
+          pageElements.forEach((el, index) => {
+            const relativeTop = (el as HTMLElement).offsetTop;
+            const relativeLeft = (el as HTMLElement).offsetLeft;
+
+            layouts.push({
+              pageIndex: index + 1,
+              top: relativeTop,
+              left: relativeLeft,
+              width: (el as HTMLElement).offsetWidth,
+              height: (el as HTMLElement).offsetHeight
+            });
+          });
+        } else {
+          // Fallback if no pages detected (single continuous doc)
+          layouts.push({
+            pageIndex: 1,
+            top: 0,
+            left: 0,
+            width: contentRef.current.offsetWidth,
+            height: contentRef.current.offsetHeight
+          });
+        }
+
+        setPageLayouts(layouts);
+
         if (onDocumentLoad) {
-          onDocumentLoad(pages.length);
+          onDocumentLoad(layouts.length);
         }
       } catch (err) {
-        console.error('Error loading DOCX:', err);
-        setState(prev => ({
-          ...prev,
-          isLoading: false,
-          error: err instanceof Error ? err.message : 'Failed to load Word document'
-        }));
+        if (err instanceof Error && err.name === 'AbortError') return;
+
+        console.error('DocxViewer: Error loading DOCX:', err);
+        if (isMounted) {
+          setState(prev => ({
+            ...prev,
+            isLoading: false,
+            error: err instanceof Error ? err.message : 'Failed to load Word document'
+          }));
+
+          // Ensure parent knows loading is done, even on error
+          if (onDocumentLoad) {
+            onDocumentLoad(0);
+          }
+        }
       }
     };
 
-    if (documentUrl) {
-      loadDocx();
-    }
+    loadDocx();
+
+    return () => {
+      isMounted = false;
+      abortController.abort();
+    };
   }, [documentUrl, onDocumentLoad]);
 
   // Update container dimensions
@@ -131,15 +213,24 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
-  // Update document dimensions when page renders or zoom changes
-  useEffect(() => {
-    if (pageRef.current) {
-      setDocumentDimensions({
-        width: pageRef.current.offsetWidth,
-        height: pageRef.current.offsetHeight
-      });
+  // Handle Scroll to update current page
+  const handleScroll = useCallback(() => {
+    if (!containerRef.current || pageLayouts.length === 0) return;
+
+    const container = containerRef.current;
+    const scrollMid = container.scrollTop + container.clientHeight / 2;
+
+    const scaledScroll = scrollMid / zoomScale;
+
+    const currentPageLayout = pageLayouts.find(layout => {
+      const pageBottom = layout.top + layout.height;
+      return scaledScroll >= layout.top && scaledScroll < pageBottom;
+    });
+
+    if (currentPageLayout && currentPageLayout.pageIndex !== currentPage) {
+      onPageChange(currentPageLayout.pageIndex);
     }
-  }, [state.pages, currentPage, zoomScale]);
+  }, [pageLayouts, zoomScale, currentPage, onPageChange]);
 
   // Handle mouse wheel for zoom
   const handleWheel = useCallback((event: React.WheelEvent) => {
@@ -161,14 +252,6 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
   // Drag scrolling handlers
   const handleMouseDown = useCallback((event: React.MouseEvent) => {
     if (event.button !== 0) return;
-    // Don't start drag if clicking on text (allow selection)
-    // But PDF viewer allows drag everywhere. 
-    // To allow text selection, we might want to check target.
-    // However, requirement says "Pan with pointer drag".
-    // Let's allow drag if not on an interactive element?
-    // For now, replicate PDF behavior: drag everywhere.
-    // If text selection is needed, user can't drag.
-    // PDF.js usually handles this by allowing drag on background.
 
     const container = containerRef.current;
     if (!container) return;
@@ -176,11 +259,6 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
     setIsDragging(true);
     setDragStart({ x: event.clientX, y: event.clientY });
     setScrollStart({ x: container.scrollLeft, y: container.scrollTop });
-    // event.preventDefault(); // Prevent default to stop text selection? 
-    // If we want text selection, we shouldn't prevent default, but then drag might interfere.
-    // PDF viewer usually uses a "hand tool" mode vs "text selection" mode.
-    // The requirement says "Pan with pointer drag".
-    // I will enable drag and prevent default for now to match "Pan" behavior.
     event.preventDefault();
   }, []);
 
@@ -205,34 +283,33 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
     setIsDragging(false);
   }, []);
 
-  if (state.isLoading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <div className="w-2 h-2 bg-ocean-blue rounded-full mx-auto mb-4 opacity-75" />
-          <p className="text-off-white text-sm">Loading Document...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (state.error) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center text-red-400">
-          <p className="text-lg font-semibold mb-2">Error</p>
-          <p>{state.error}</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
+      {/* Loading Overlay */}
+      {state.isLoading && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#525659] bg-opacity-90">
+          <div className="text-center">
+            <div className="w-8 h-8 border-4 border-ocean-blue border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-off-white text-sm">Loading Document...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Error Overlay */}
+      {state.error && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#525659]">
+          <div className="text-center text-red-400">
+            <p className="text-lg font-semibold mb-2">Error</p>
+            <p>{state.error}</p>
+          </div>
+        </div>
+      )}
+
       <div
         ref={containerRef}
         className="flex-1 overflow-auto bg-[#525659] scroll-smooth"
         style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+        onScroll={handleScroll}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -243,50 +320,40 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
           <div className="relative">
             {/* Page Content */}
             <div
-              ref={pageRef}
-              className="bg-white shadow-2xl origin-top-center"
+              ref={contentRef}
+              className="bg-white shadow-2xl origin-top-center docx-wrapper"
               style={{
-                width: '816px', // Standard Letter width approx
-                minHeight: '1056px', // Standard Letter height approx
-                padding: '48px', // 0.5 inch margins
                 transform: `scale(${zoomScale})`,
                 transformOrigin: 'top center',
-                transition: isDragging ? 'none' : 'transform 0.1s ease-out'
+                transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+                minHeight: '100px', // Ensure it has some height even when empty
+                minWidth: '100px'
               }}
-            >
-              <div
-                className="prose prose-lg max-w-none"
-                style={{
-                  color: '#1f2937',
-                  lineHeight: '1.7',
-                  fontFamily: 'Georgia, serif'
-                }}
-                dangerouslySetInnerHTML={{
-                  __html: state.pages[currentPage - 1] || ''
-                }}
-              />
-            </div>
+            />
 
-            {/* Annotation Overlay */}
-            {onAnnotationCreate && documentDimensions.width > 0 && (
+            {/* Annotation Overlays - One per page */}
+            {onAnnotationCreate && pageLayouts.map((layout) => (
               <div
+                key={layout.pageIndex}
                 style={{
                   position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: documentDimensions.width,
-                  height: documentDimensions.height,
-                  pointerEvents: 'none' // Let clicks pass through to overlay content
+                  top: layout.top,
+                  left: layout.left,
+                  width: layout.width,
+                  height: layout.height,
+                  pointerEvents: 'none',
+                  transform: `scale(${zoomScale})`,
+                  transformOrigin: 'top left', // Scale from top-left of the page
                 }}
               >
                 <AnnotationOverlay
                   annotations={annotations}
                   documentType="docx"
-                  currentPage={currentPage}
+                  currentPage={layout.pageIndex}
                   containerWidth={containerDimensions.width}
                   containerHeight={containerDimensions.height}
-                  documentWidth={documentDimensions.width}
-                  documentHeight={documentDimensions.height}
+                  documentWidth={layout.width}
+                  documentHeight={layout.height}
                   onAnnotationClick={(annotation) => {
                     if (onAnnotationClick) {
                       onAnnotationClick(annotation);
@@ -299,7 +366,7 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
                   }}
                 />
               </div>
-            )}
+            ))}
           </div>
         </div>
       </div>

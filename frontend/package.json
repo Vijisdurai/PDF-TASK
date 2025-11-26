@@ -14,9 +14,9 @@
   "dependencies": {
     "date-fns": "^4.1.0",
     "dexie": "^3.2.7",
+    "docx-preview": "^0.3.7",
     "framer-motion": "^11.18.2",
     "lucide-react": "^0.552.0",
-    "mammoth": "^1.11.0",
     "pdfjs-dist": "^3.11.174",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
