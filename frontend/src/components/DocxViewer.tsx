@@ -130,6 +130,13 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
         console.log('DocxViewer: renderAsync completed');
         console.log('DocxViewer: Rendered HTML length:', contentRef.current.innerHTML.length);
 
+        // Debug DOM structure
+        const children = Array.from(contentRef.current.children);
+        console.log('DocxViewer: Root children count:', children.length);
+        children.forEach((child, i) => {
+          console.log(`DocxViewer: Child ${i} tag: ${child.tagName}, classes: ${child.className}`);
+        });
+
         if (!isMounted) return;
 
         setState({
@@ -138,7 +145,19 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
         });
 
         // Detect pages and store their layouts
-        const pageElements = contentRef.current.querySelectorAll('section.docx-page, div.docx-page');
+        // Try multiple selectors
+        let pageElements = contentRef.current.querySelectorAll('section.docx-page, div.docx-page, article.docx-page');
+
+        // If still 0, try looking for any section or article if they look like pages
+        if (pageElements.length === 0) {
+          console.log('DocxViewer: No standard page classes found, trying broad search');
+          const potentialPages = contentRef.current.querySelectorAll('section, article');
+          if (potentialPages.length > 0) {
+            console.log('DocxViewer: Found potential pages via tag name:', potentialPages.length);
+            pageElements = potentialPages;
+          }
+        }
+
         console.log('DocxViewer: Detected pages:', pageElements.length);
 
         const layouts: PageLayout[] = [];
