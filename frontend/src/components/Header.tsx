@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Minimize, Expand } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 
 const Header: React.FC = () => {
@@ -57,6 +57,25 @@ const Header: React.FC = () => {
     const baseScale = currentScale < 0 ? 1 : currentScale;
     const newScale = Math.max(0.1, baseScale - 0.25);
     dispatch({ type: 'SET_VIEWER_STATE', payload: { zoomScale: newScale } });
+  };
+
+  const handleFitToggle = () => {
+    // Toggle logic: 
+    // If not in a fit mode -> Fit Page (-1)
+    // If Fit Page (-1) -> Fit Width (-2)
+    // If Fit Width (-2) -> Fit Page (-1)
+    const currentZoom = state.viewerState.zoomScale;
+    let newZoom = -1;
+
+    if (currentZoom === -1) {
+      newZoom = -2;
+    } else if (currentZoom === -2) {
+      newZoom = -1;
+    } else {
+      newZoom = -1;
+    }
+
+    dispatch({ type: 'SET_VIEWER_STATE', payload: { zoomScale: newZoom } });
   };
 
   const handleFitToScreen = () => {
@@ -188,15 +207,15 @@ const Header: React.FC = () => {
               </select>
 
               <button
-                onClick={handleFitToScreen}
-                className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 rounded-lg transition-all text-white font-medium"
-                title="Fit to screen"
+                onClick={handleFitToggle}
+                className="p-2 bg-white/5 backdrop-blur-sm hover:bg-white/10 rounded-lg transition-all text-off-white border border-white/10 hover:border-white/20"
+                title={state.viewerState.zoomScale === -1 ? "Switch to Fit Width" : "Fit to Page"}
               >
-                Fit
+                {state.viewerState.zoomScale === -1 ? <Expand size={18} /> : <Minimize size={18} />}
               </button>
             </div>
           ) : (
-            <div className="flex-1" />
+            <div className="flex-1" /> // Spacer for image documents
           )}
         </div>
       ) : (

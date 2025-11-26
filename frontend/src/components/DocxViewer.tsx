@@ -26,8 +26,6 @@ interface DocxViewerState {
 
 interface PageLayout {
   pageIndex: number;
-  top: number;
-  left: number;
   width: number;
   height: number;
 }
@@ -54,6 +52,8 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
   });
   const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
   const [pageLayouts, setPageLayouts] = useState<PageLayout[]>([]);
+  const [pageElements, setPageElements] = useState<HTMLElement[]>([]);
+  const [effectiveScale, setEffectiveScale] = useState(1);
 
   // Load DOCX document
   useEffect(() => {
@@ -128,65 +128,51 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
         ]);
 
         console.log('DocxViewer: renderAsync completed');
-        console.log('DocxViewer: Rendered HTML length:', contentRef.current.innerHTML.length);
-
-        // Debug DOM structure
-        const children = Array.from(contentRef.current.children);
-        console.log('DocxViewer: Root children count:', children.length);
-        children.forEach((child, i) => {
-          console.log(`DocxViewer: Child ${i} tag: ${child.tagName}, classes: ${child.className}`);
-        });
 
         if (!isMounted) return;
 
-        setState({
-          isLoading: false,
-          error: null
-        });
-
-        // Detect pages and store their layouts
+        // Detect pages
         // Try multiple selectors
-        let pageElements = contentRef.current.querySelectorAll('section.docx-page, div.docx-page, article.docx-page');
+        let detectedPageElements = Array.from(contentRef.current.querySelectorAll('section.docx-content, section.docx-page, div.docx-page, article.docx-page')) as HTMLElement[];
 
         // If still 0, try looking for any section or article if they look like pages
-        if (pageElements.length === 0) {
+        if (detectedPageElements.length === 0) {
           console.log('DocxViewer: No standard page classes found, trying broad search');
-          const potentialPages = contentRef.current.querySelectorAll('section, article');
+          const potentialPages = Array.from(contentRef.current.querySelectorAll('section, article')) as HTMLElement[];
           if (potentialPages.length > 0) {
             console.log('DocxViewer: Found potential pages via tag name:', potentialPages.length);
-            pageElements = potentialPages;
+            detectedPageElements = potentialPages;
           }
         }
 
-        console.log('DocxViewer: Detected pages:', pageElements.length);
+        console.log('DocxViewer: Detected pages:', detectedPageElements.length);
+        setPageElements(detectedPageElements);
 
         const layouts: PageLayout[] = [];
 
-        if (pageElements.length > 0) {
-          pageElements.forEach((el, index) => {
-            const relativeTop = (el as HTMLElement).offsetTop;
-            const relativeLeft = (el as HTMLElement).offsetLeft;
-
+        if (detectedPageElements.length > 0) {
+          detectedPageElements.forEach((el, index) => {
             layouts.push({
               pageIndex: index + 1,
-              top: relativeTop,
-              left: relativeLeft,
-              width: (el as HTMLElement).offsetWidth,
-              height: (el as HTMLElement).offsetHeight
+              width: el.offsetWidth,
+              height: el.offsetHeight
             });
           });
         } else {
           // Fallback if no pages detected (single continuous doc)
           layouts.push({
             pageIndex: 1,
-            top: 0,
-            left: 0,
             width: contentRef.current.offsetWidth,
             height: contentRef.current.offsetHeight
           });
         }
 
         setPageLayouts(layouts);
+
+        setState({
+          isLoading: false,
+          error: null
+        });
 
         if (onDocumentLoad) {
           onDocumentLoad(layouts.length);
@@ -218,6 +204,28 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
     };
   }, [documentUrl, onDocumentLoad]);
 
+  // Handle Pagination: Show only current page
+  useEffect(() => {
+    if (pageElements.length === 0) return;
+
+    pageElements.forEach((el, index) => {
+      if (index + 1 === currentPage) {
+        el.style.display = 'block';
+        // Add some margin/shadow to make it look like a page
+        el.style.marginBottom = '20px';
+        el.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+        el.style.backgroundColor = 'white';
+      } else {
+        el.style.display = 'none';
+      }
+    });
+
+    // Scroll to top when page changes
+    if (containerRef.current) {
+      containerRef.current.scrollTop = 0;
+    }
+  }, [currentPage, pageElements]);
+
   // Update container dimensions
   useEffect(() => {
     const updateDimensions = () => {
@@ -232,24 +240,34 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
-  // Handle Scroll to update current page
-  const handleScroll = useCallback(() => {
-    if (!containerRef.current || pageLayouts.length === 0) return;
+  // Calculate effective scale based on Fit mode
+  useEffect(() => {
+    if (pageLayouts.length === 0 || containerDimensions.width === 0) return;
 
-    const container = containerRef.current;
-    const scrollMid = container.scrollTop + container.clientHeight / 2;
+    const currentPageLayout = pageLayouts[currentPage - 1] || pageLayouts[0];
+    const padding = 40; // 20px padding on each side
 
-    const scaledScroll = scrollMid / zoomScale;
+    let newScale = 1;
 
-    const currentPageLayout = pageLayouts.find(layout => {
-      const pageBottom = layout.top + layout.height;
-      return scaledScroll >= layout.top && scaledScroll < pageBottom;
-    });
-
-    if (currentPageLayout && currentPageLayout.pageIndex !== currentPage) {
-      onPageChange(currentPageLayout.pageIndex);
+    if (zoomScale === -1) {
+      // Fit to Page (Contain)
+      const scaleX = (containerDimensions.width - padding) / currentPageLayout.width;
+      const scaleY = (containerDimensions.height - padding) / currentPageLayout.height;
+      newScale = Math.min(scaleX, scaleY);
+    } else if (zoomScale === -2) {
+      // Fit to Width
+      newScale = (containerDimensions.width - padding) / currentPageLayout.width;
+    } else {
+      // Custom Zoom
+      newScale = zoomScale;
     }
-  }, [pageLayouts, zoomScale, currentPage, onPageChange]);
+
+    // Clamp scale to reasonable limits
+    newScale = Math.max(0.1, Math.min(5, newScale));
+
+    setEffectiveScale(newScale);
+
+  }, [zoomScale, containerDimensions, pageLayouts, currentPage]);
 
   // Handle mouse wheel for zoom
   const handleWheel = useCallback((event: React.WheelEvent) => {
@@ -258,15 +276,14 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
       event.stopPropagation();
 
       const delta = event.deltaY > 0 ? -0.1 : 0.1;
-      const prevScale = zoomScale;
-      const baseScale = prevScale > 0 ? prevScale : 1;
-      const newScale = Math.max(0.25, Math.min(5, baseScale + delta));
+      const prevScale = effectiveScale;
+      const newScale = Math.max(0.25, Math.min(5, prevScale + delta));
 
       if (newScale !== prevScale) {
         onZoomChange(newScale);
       }
     }
-  }, [zoomScale, onZoomChange]);
+  }, [effectiveScale, onZoomChange]);
 
   // Drag scrolling handlers
   const handleMouseDown = useCallback((event: React.MouseEvent) => {
@@ -302,6 +319,8 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
     setIsDragging(false);
   }, []);
 
+  const currentPageLayout = pageLayouts[currentPage - 1];
+
   return (
     <div className="flex flex-col h-full relative">
       {/* Loading Overlay */}
@@ -328,51 +347,53 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
         ref={containerRef}
         className="flex-1 overflow-auto bg-[#525659] scroll-smooth"
         style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
-        onScroll={handleScroll}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
       >
-        <div className="p-4 min-h-full min-w-full flex justify-center">
-          <div className="relative">
+        <div className="p-4 min-h-full min-w-full flex" style={{ width: 'fit-content' }}>
+          <div
+            className="relative m-auto"
+            style={{
+              width: currentPageLayout ? currentPageLayout.width * effectiveScale : 'auto',
+              height: currentPageLayout ? currentPageLayout.height * effectiveScale : 'auto',
+              overflow: 'hidden'
+            }}
+          >
             {/* Page Content */}
             <div
               ref={contentRef}
-              className="bg-white shadow-2xl origin-top-center docx-wrapper"
+              className="bg-transparent origin-top-left docx-wrapper"
               style={{
-                transform: `scale(${zoomScale})`,
-                transformOrigin: 'top center',
+                width: currentPageLayout ? currentPageLayout.width : 'auto',
+                height: currentPageLayout ? currentPageLayout.height : 'auto',
+                transform: `scale(${effectiveScale})`,
+                transformOrigin: 'top left',
                 transition: isDragging ? 'none' : 'transform 0.1s ease-out',
-                minHeight: '100px', // Ensure it has some height even when empty
+                minHeight: '100px',
                 minWidth: '100px'
               }}
             />
 
-            {/* Annotation Overlays - One per page */}
-            {onAnnotationCreate && pageLayouts.map((layout) => (
+            {/* Annotation Overlays - Only for current page */}
+            {onAnnotationCreate && currentPageLayout && (
               <div
-                key={layout.pageIndex}
                 style={{
                   position: 'absolute',
-                  top: layout.top,
-                  left: layout.left,
-                  width: layout.width,
-                  height: layout.height,
-                  pointerEvents: 'none',
-                  transform: `scale(${zoomScale})`,
-                  transformOrigin: 'top left', // Scale from top-left of the page
+                  inset: 0,
+                  pointerEvents: 'none'
                 }}
               >
                 <AnnotationOverlay
                   annotations={annotations}
                   documentType="docx"
-                  currentPage={layout.pageIndex}
+                  currentPage={currentPage}
                   containerWidth={containerDimensions.width}
                   containerHeight={containerDimensions.height}
-                  documentWidth={layout.width}
-                  documentHeight={layout.height}
+                  documentWidth={currentPageLayout.width * effectiveScale}
+                  documentHeight={currentPageLayout.height * effectiveScale}
                   onAnnotationClick={(annotation) => {
                     if (onAnnotationClick) {
                       onAnnotationClick(annotation);
@@ -385,7 +406,7 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
                   }}
                 />
               </div>
-            ))}
+            )}
           </div>
         </div>
       </div>
