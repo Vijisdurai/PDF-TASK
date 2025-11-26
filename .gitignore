@@ -48,7 +48,7 @@ htmlcov/
 
 # Uploads
 backend/uploads/*
-!backend/uploads/.gitkeep
+
 
 # Environment Variables
 .env
