@@ -1,60 +1,56 @@
-# Dependencies
-node_modules/
-frontend/node_modules/
-backend/venv/
-backend/__pycache__/
-backend/app/__pycache__/
-backend/app/*/__pycache__/
+# General
+.DS_Store
+Thumbs.db
+Desktop.ini
 
-# Build outputs
-frontend/dist/
-backend/build/
-
-# Environment variables
-.env
-backend/.env
-frontend/.env
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.kiro/*
 
 # Logs
+logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+build/
+*.local
 
-# Coverage directory used by tools like istanbul
-coverage/
-
-# IDE
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Python
-*.pyc
-*.pyo
-*.pyd
+# Python / Backend
 __pycache__/
-.Python
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Virtual environments
+*.py[cod]
+*$py.class
 venv/
+.venv/
 env/
-ENV/
+.pytest_cache/
+.coverage
+htmlcov/
+*.spec
 
+# Database
+*.db
+*.sqlite3
+
+# Uploads
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Environment Variables
+.env
+.env.*
+!.env.example
