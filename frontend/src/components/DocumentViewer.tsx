@@ -23,7 +23,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
   onAnnotationClick
 }) => {
   const { state, dispatch } = useAppContext();
-  const { viewerState } = state;
+  const { viewerState, currentDocument } = state;
 
   // Use annotations hook
   const {
@@ -79,17 +79,20 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
   }, [dispatch, viewerState.currentPage]);
 
   // Annotation handlers
-  const handleAnnotationCreate = useCallback(async (xPercent: number, yPercent: number, content: string) => {
+  const handleAnnotationCreate = useCallback(async (xPercent: number, yPercent: number, content: string, color: string) => {
+    if (!currentDocument) return;
+
     const newAnnotation: Omit<import('../contexts/AppContext').DocumentAnnotation, 'id' | 'createdAt' | 'updatedAt'> = {
       type: 'document',
       documentId,
       xPercent,
       yPercent,
       page: viewerState.currentPage,
-      content
+      content,
+      color
     };
     await createAnnotation(newAnnotation);
-  }, [createAnnotation, documentId, viewerState.currentPage]);
+  }, [createAnnotation, documentId, viewerState.currentPage, currentDocument]);
 
   const handleAnnotationUpdate = useCallback(async (id: string, content: string) => {
     await updateAnnotation(id, { content });
@@ -154,8 +157,16 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
             annotations={annotations.filter((ann): ann is import('../contexts/AppContext').ImageAnnotation =>
               ann.type === 'image'
             )}
-            onAnnotationCreate={async (annotation) => {
-              await createAnnotation(annotation);
+            onAnnotationCreate={async (xPixel, yPixel, content, color) => {
+              const newAnnotation: Omit<import('../contexts/AppContext').ImageAnnotation, 'id' | 'createdAt' | 'updatedAt'> = {
+                type: 'image',
+                documentId,
+                xPixel,
+                yPixel,
+                content,
+                color
+              };
+              await createAnnotation(newAnnotation);
             }}
             onAnnotationUpdate={async (id, updates) => {
               await updateAnnotation(id, updates);
@@ -293,26 +304,14 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
       <AnimatePresence>
         {viewerState.isLoading && viewerType !== 'image' && (
           <motion.div
-            className="absolute inset-0 bg-navy-800/80 backdrop-blur-sm flex items-center justify-center z-20"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            className="absolute inset-0 bg-navy-900/80 backdrop-blur-sm flex items-center justify-center z-50"
           >
             <div className="text-center">
-              <motion.div
-                className="rounded-full h-12 w-12 border-b-2 border-ocean-blue mx-auto mb-4"
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-              />
-              <motion.p
-                className="text-off-white"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: 0.1 }}
-              >
-                Loading {filename}...
-              </motion.p>
+              <Loader2 className="w-10 h-10 text-ocean-blue animate-spin mx-auto mb-4" />
+              <p className="text-off-white font-medium">Loading document...</p>
             </div>
           </motion.div>
         )}

@@ -17,6 +17,7 @@ export interface AnnotationBase {
   id: string;
   documentId: string;
   content: string;
+  color?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -34,7 +35,6 @@ export interface ImageAnnotation extends AnnotationBase {
   type: 'image';
   xPixel: number;
   yPixel: number;
-  color?: string; // Hex color code
 }
 
 // Union type for all annotation types
@@ -52,19 +52,22 @@ export interface AppState {
   // Document management
   documents: DocumentMetadata[];
   currentDocument: DocumentMetadata | null;
-  
+
   // Annotation management
   annotations: Annotation[];
-  
+
   // Viewer state
   viewerState: ViewerState;
-  
+
   // UI state
   isNotePanelOpen: boolean;
   isUploading: boolean;
-  
+
   // Network state
   isOnline: boolean;
+
+  // User preferences
+  selectedColor: string;
 }
 
 // Action types
@@ -80,7 +83,8 @@ export type AppAction =
   | { type: 'SET_VIEWER_STATE'; payload: Partial<ViewerState> }
   | { type: 'TOGGLE_NOTE_PANEL' }
   | { type: 'SET_UPLOADING'; payload: boolean }
-  | { type: 'SET_ONLINE_STATUS'; payload: boolean };
+  | { type: 'SET_ONLINE_STATUS'; payload: boolean }
+  | { type: 'SET_SELECTED_COLOR'; payload: string };
 
 // Initial state
 const initialState: AppState = {
@@ -97,6 +101,7 @@ const initialState: AppState = {
   isNotePanelOpen: false,
   isUploading: false,
   isOnline: navigator.onLine,
+  selectedColor: '#000000', // Default to Black
 };
 
 // Reducer function
@@ -104,13 +109,13 @@ function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'SET_DOCUMENTS':
       return { ...state, documents: action.payload };
-    
+
     case 'ADD_DOCUMENT':
-      return { 
-        ...state, 
-        documents: [...state.documents, action.payload] 
+      return {
+        ...state,
+        documents: [...state.documents, action.payload]
       };
-    
+
     case 'REMOVE_DOCUMENT':
       return {
         ...state,
@@ -118,19 +123,19 @@ function appReducer(state: AppState, action: AppAction): AppState {
         // Clear current document if it's the one being deleted
         currentDocument: state.currentDocument?.id === action.payload ? null : state.currentDocument
       };
-    
+
     case 'SET_CURRENT_DOCUMENT':
       return { ...state, currentDocument: action.payload };
-    
+
     case 'SET_ANNOTATIONS':
       return { ...state, annotations: action.payload };
-    
+
     case 'ADD_ANNOTATION':
-      return { 
-        ...state, 
-        annotations: [...state.annotations, action.payload] 
+      return {
+        ...state,
+        annotations: [...state.annotations, action.payload]
       };
-    
+
     case 'UPDATE_ANNOTATION':
       return {
         ...state,
@@ -140,28 +145,31 @@ function appReducer(state: AppState, action: AppAction): AppState {
             : annotation
         ),
       };
-    
+
     case 'DELETE_ANNOTATION':
       return {
         ...state,
         annotations: state.annotations.filter(annotation => annotation.id !== action.payload),
       };
-    
+
     case 'SET_VIEWER_STATE':
       return {
         ...state,
         viewerState: { ...state.viewerState, ...action.payload },
       };
-    
+
     case 'TOGGLE_NOTE_PANEL':
       return { ...state, isNotePanelOpen: !state.isNotePanelOpen };
-    
+
     case 'SET_UPLOADING':
       return { ...state, isUploading: action.payload };
-    
+
     case 'SET_ONLINE_STATUS':
       return { ...state, isOnline: action.payload };
-    
+
+    case 'SET_SELECTED_COLOR':
+      return { ...state, selectedColor: action.payload };
+
     default:
       return state;
   }

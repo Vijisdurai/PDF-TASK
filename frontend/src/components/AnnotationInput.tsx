@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Save, X, Edit3, Trash2 } from 'lucide-react';
+import { useAppContext } from '../contexts/AppContext';
+import ColorPicker from './ColorPicker';
 
 interface AnnotationInputProps {
   isOpen: boolean;
@@ -8,7 +10,7 @@ interface AnnotationInputProps {
   y: number; // Screen coordinate for positioning
   initialContent?: string;
   isEditing?: boolean;
-  onSave: (content: string) => void;
+  onSave: (content: string, color: string) => void;
   onCancel: () => void;
   onDelete?: () => void;
   maxLength?: number;
@@ -25,6 +27,7 @@ const AnnotationInput: React.FC<AnnotationInputProps> = ({
   onDelete,
   maxLength = 500
 }) => {
+  const { state, dispatch } = useAppContext();
   const [content, setContent] = useState(initialContent);
   const [isExpanded, setIsExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -59,11 +62,11 @@ const AnnotationInput: React.FC<AnnotationInputProps> = ({
   const handleSave = useCallback(() => {
     const trimmedContent = content.trim();
     if (trimmedContent) {
-      onSave(trimmedContent);
+      onSave(trimmedContent, state.selectedColor);
     } else {
       onCancel();
     }
-  }, [content, onSave, onCancel]);
+  }, [content, onSave, onCancel, state.selectedColor]);
 
   // Handle cancel action
   const handleCancel = useCallback(() => {
@@ -92,10 +95,9 @@ const AnnotationInput: React.FC<AnnotationInputProps> = ({
 
   // Calculate optimal positioning to keep popover in viewport
   const getPopoverPosition = useCallback(() => {
-    if (!containerRef.current) return { x, y };
-
-    const popoverWidth = 280;
-    const popoverHeight = isExpanded ? 200 : 120;
+    const popoverWidth = 320; // Matches min-w-[320px]
+    // Use safer estimates for height to trigger flip earlier
+    const popoverHeight = isExpanded ? 400 : 300;
     const margin = 16;
 
     const viewportWidth = window.innerWidth;
@@ -103,27 +105,61 @@ const AnnotationInput: React.FC<AnnotationInputProps> = ({
 
     let adjustedX = x;
     let adjustedY = y;
+    let placement: 'top' | 'bottom' = 'bottom';
 
-    // Adjust horizontal position
+    // Vertical positioning
+    const fitsBelow = (y + margin + popoverHeight <= viewportHeight);
+    const fitsAbove = (y - margin - popoverHeight >= 0);
+
+    if (fitsBelow) {
+      adjustedY = y + margin;
+      placement = 'bottom';
+    } else if (fitsAbove) {
+      adjustedY = y - margin - popoverHeight;
+      placement = 'top';
+    } else {
+      // Fits nowhere perfectly. Pick the side with more space and clamp.
+      const spaceBelow = viewportHeight - (y + margin);
+      const spaceAbove = y - margin;
+
+      if (spaceBelow >= spaceAbove) {
+        // Place below, but clamp to bottom edge
+        adjustedY = Math.min(y + margin, viewportHeight - popoverHeight - margin);
+        placement = 'bottom';
+      } else {
+        // Place above, but clamp to top edge
+        adjustedY = Math.max(margin, y - margin - popoverHeight);
+        placement = 'top';
+      }
+    }
+
+    // Horizontal positioning
     if (x + popoverWidth + margin > viewportWidth) {
-      adjustedX = x - popoverWidth - margin;
+      adjustedX = viewportWidth - popoverWidth - margin;
     }
     if (adjustedX < margin) {
       adjustedX = margin;
     }
 
-    // Adjust vertical position
-    if (y + popoverHeight + margin > viewportHeight) {
-      adjustedY = y - popoverHeight - margin;
-    }
-    if (adjustedY < margin) {
-      adjustedY = margin;
-    }
-
-    return { x: adjustedX, y: adjustedY };
+    return { x: adjustedX, y: adjustedY, placement };
   }, [x, y, isExpanded]);
 
-  const position = getPopoverPosition();
+  const { x: finalX, y: finalY, placement } = getPopoverPosition();
+
+  // Determine dropdown direction based on placement and available space
+  const getDropdownDirection = () => {
+    if (placement === 'top') return 'up';
+
+    const viewportHeight = window.innerHeight;
+    const boxHeight = isExpanded ? 400 : 300;
+    const boxBottom = finalY + boxHeight;
+    const spaceBelowBox = viewportHeight - boxBottom;
+
+    // If less than 200px space below the box, open dropdown upwards
+    return spaceBelowBox < 200 ? 'up' : 'down';
+  };
+
+  const dropdownDirection = getDropdownDirection();
 
   if (!isOpen) return null;
 
@@ -133,12 +169,12 @@ const AnnotationInput: React.FC<AnnotationInputProps> = ({
         ref={containerRef}
         className="fixed z-50 pointer-events-auto"
         style={{
-          left: position.x,
-          top: position.y,
+          left: finalX,
+          top: finalY,
         }}
-        initial={{ opacity: 0, scale: 0.8, y: -10 }}
+        initial={{ opacity: 0, scale: 0.8, y: placement === 'bottom' ? -10 : 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.8, y: -10 }}
+        exit={{ opacity: 0, scale: 0.8, y: placement === 'bottom' ? -10 : 10 }}
         transition={{
           type: "spring",
           stiffness: 400,
@@ -148,9 +184,9 @@ const AnnotationInput: React.FC<AnnotationInputProps> = ({
       >
         {/* Backdrop blur overlay */}
         <div className="absolute inset-0 bg-navy-900/20 backdrop-blur-sm rounded-lg -m-2" />
-        
+
         {/* Main popover content */}
-        <div className="relative bg-navy-800 border border-navy-600 rounded-lg shadow-xl p-4 min-w-[280px] max-w-[400px]">
+        <div className="relative bg-navy-800 border border-navy-600 rounded-lg shadow-xl p-4 min-w-[320px] max-w-[400px] max-h-[90vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           {/* Header */}
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center space-x-2">
@@ -159,7 +195,7 @@ const AnnotationInput: React.FC<AnnotationInputProps> = ({
                 {isEditing ? 'Edit Annotation' : 'New Annotation'}
               </span>
             </div>
-            
+
             {/* Expand/collapse button */}
             <button
               onClick={() => setIsExpanded(!isExpanded)}
@@ -192,7 +228,7 @@ const AnnotationInput: React.FC<AnnotationInputProps> = ({
               maxLength={maxLength}
               rows={isExpanded ? 5 : 3}
             />
-            
+
             {/* Character count */}
             <div className="flex justify-between items-center mt-2 text-xs text-gray-400">
               <span>
@@ -203,6 +239,19 @@ const AnnotationInput: React.FC<AnnotationInputProps> = ({
               </span>
             </div>
           </div>
+
+          {/* Color Picker (Only for new annotations) */}
+          {!isEditing && (
+            <div className="mb-4">
+              <label className="block text-xs text-gray-400 mb-1.5">Marker Color</label>
+              <ColorPicker
+                selectedColor={state.selectedColor}
+                onSelect={(color) => dispatch({ type: 'SET_SELECTED_COLOR', payload: color })}
+                direction={dropdownDirection}
+                width="w-full"
+              />
+            </div>
+          )}
 
           {/* Action buttons */}
           <div className="flex items-center justify-between">
@@ -253,12 +302,13 @@ const AnnotationInput: React.FC<AnnotationInputProps> = ({
           </div>
 
           {/* Popover arrow */}
-          <div 
+          <div
             className="absolute w-3 h-3 bg-navy-800 border-l border-t border-navy-600 transform rotate-45"
             style={{
-              left: Math.min(Math.max(x - position.x - 6, 12), 268), // Clamp arrow position
-              top: y < position.y ? '100%' : '-6px', // Arrow on top or bottom
-              marginTop: y < position.y ? '-1px' : '0',
+              left: Math.min(Math.max(x - finalX - 6, 12), 308), // Clamp arrow position
+              top: placement === 'top' ? '100%' : '-6px', // Arrow on top or bottom
+              marginTop: placement === 'top' ? '-1px' : '0',
+              transform: placement === 'top' ? 'rotate(225deg)' : 'rotate(45deg)'
             }}
           />
         </div>

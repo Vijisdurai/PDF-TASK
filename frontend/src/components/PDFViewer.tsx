@@ -19,7 +19,7 @@ interface PDFViewerProps {
   onPageChange: (page: number) => void;
   onZoomChange: (scale: number) => void;
   onDocumentLoad?: (totalPages: number) => void;
-  onAnnotationCreate?: (xPercent: number, yPercent: number, content: string) => void;
+  onAnnotationCreate?: (xPercent: number, yPercent: number, content: string, color: string) => void;
   onAnnotationUpdate?: (id: string, content: string) => void;
   onAnnotationDelete?: (id: string) => void;
   annotations?: Annotation[];
@@ -227,189 +227,118 @@ const PDFViewer: React.FC<PDFViewerProps> = ({
       // Create render context
       const renderContext = {
         canvasContext: context,
-        viewport: viewport
+        viewport: viewport,
       };
 
-      // Start new render task
+      // Start render task
       const renderTask = page.render(renderContext);
       renderTaskRef.current = renderTask;
 
-      try {
-        await renderTask.promise;
-        renderTaskRef.current = null;
-
-        // Center scroll after render completes (only on first load of each document)
-        if (containerRef.current && hasCenteredRef.current !== documentUrl) {
-          hasCenteredRef.current = documentUrl;
-          requestAnimationFrame(() => {
-            if (containerRef.current) {
-              containerRef.current.scrollTop = 0;
-            }
-          });
-        }
-      } catch (error: any) {
-        // Ignore cancellation errors, log others
-        if (error?.name !== 'RenderingCancelledException') {
-          console.error('Error rendering page:', error);
-        }
-        renderTaskRef.current = null;
-      }
+      await renderTask.promise;
+      renderTaskRef.current = null;
     } catch (error) {
-      console.error('Error setting up page render:', error);
+      if (error instanceof Error && error.name !== 'RenderingCancelledException') {
+        console.error('Error rendering page:', error);
+      }
     }
-  }, [state.pdfDocument, currentPage, zoomScale, documentUrl, getFitScale]);
+  }, [state.pdfDocument, currentPage, zoomScale, getFitScale]);
 
-  // Re-render when page, zoom, or document changes
+  // Trigger render when dependencies change
   useEffect(() => {
     renderPage();
   }, [renderPage]);
 
-  // Cleanup render tasks on unmount
-  useEffect(() => {
-    return () => {
-      if (renderTaskRef.current) {
-        renderTaskRef.current.cancel();
-        renderTaskRef.current = null;
-      }
-    };
-  }, []);
-
-  // Update container dimensions when container size changes
+  // Update container dimensions on resize
   useEffect(() => {
     const updateDimensions = () => {
       if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        setContainerDimensions({ width: rect.width, height: rect.height });
+        setContainerDimensions({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight
+        });
       }
     };
 
-    updateDimensions();
     window.addEventListener('resize', updateDimensions);
+    updateDimensions();
+
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
-  // Handle mouse wheel for zoom (Ctrl+scroll)
-  const handleWheel = useCallback((event: React.WheelEvent) => {
-    // Only handle Ctrl/Cmd + scroll for zooming
-    if (event.ctrlKey || event.metaKey) {
-      event.preventDefault();
-      event.stopPropagation();
-
-      const delta = event.deltaY > 0 ? -0.1 : 0.1;
-      const prevScale = zoomScale;
-      const baseScale = prevScale > 0 ? prevScale : 1;
-      const newScale = Math.max(0.25, Math.min(5, baseScale + delta));
-
-      if (newScale === prevScale) return;
-
-      onZoomChange(newScale);
+  // Handle mouse events for panning
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (zoomScale > 1) {
+      setIsDragging(true);
+      setDragStart({ x: e.clientX, y: e.clientY });
+      if (containerRef.current) {
+        setScrollStart({
+          x: containerRef.current.scrollLeft,
+          y: containerRef.current.scrollTop
+        });
+      }
     }
-  }, [zoomScale, onZoomChange]);
+  }, [zoomScale]);
 
-  // Drag scrolling handlers
-  const handleMouseDown = useCallback((event: React.MouseEvent) => {
-    if (event.button !== 0) return;
-
-    const container = containerRef.current;
-    if (!container) return;
-
-    setIsDragging(true);
-    setDragStart({ x: event.clientX, y: event.clientY });
-    setScrollStart({ x: container.scrollLeft, y: container.scrollTop });
-    event.preventDefault();
-  }, []);
-
-  const handleMouseMove = useCallback((event: React.MouseEvent) => {
-    if (!isDragging) return;
-
-    const container = containerRef.current;
-    if (!container) return;
-
-    const deltaX = event.clientX - dragStart.x;
-    const deltaY = event.clientY - dragStart.y;
-
-    container.scrollLeft = scrollStart.x - deltaX;
-    container.scrollTop = scrollStart.y - deltaY;
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (isDragging && containerRef.current) {
+      const dx = e.clientX - dragStart.x;
+      const dy = e.clientY - dragStart.y;
+      containerRef.current.scrollLeft = scrollStart.x - dx;
+      containerRef.current.scrollTop = scrollStart.y - dy;
+    }
   }, [isDragging, dragStart, scrollStart]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
   }, []);
 
-  const handleMouseLeave = useCallback(() => {
-    setIsDragging(false);
-  }, []);
+  // Handle annotation creation wrapper
+  const handleAnnotationCreate = useCallback((x: number, y: number, content: string, color: string) => {
+    if (onAnnotationCreate) {
+      onAnnotationCreate(x, y, content, color);
+    }
+  }, [onAnnotationCreate]);
 
   if (state.isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <div className="w-2 h-2 bg-ocean-blue rounded-full mx-auto mb-4 opacity-75" />
-          <p className="text-off-white text-sm">Loading PDF...</p>
-        </div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-ocean-blue"></div>
       </div>
     );
   }
 
   if (state.error) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center text-red-400">
-          <p className="text-lg font-semibold mb-2">Error</p>
-          <p>{state.error}</p>
-        </div>
+      <div className="flex items-center justify-center h-full text-red-500">
+        <p>{state.error}</p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Canvas container */}
-      <div
-        ref={containerRef}
-        className="flex-1 overflow-auto bg-[#525659] scroll-smooth"
-        style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
-        onWheel={handleWheel}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
-      >
-        <div className="p-4 min-h-full min-w-full" style={{
-          display: 'flex',
-          width: 'fit-content'
-        }}>
-          <div className="relative m-auto">
-            <canvas
-              ref={canvasRef}
-              className="shadow-2xl"
-              style={{ display: 'block' }}
-            />
+    <div
+      ref={containerRef}
+      className={`relative h-full overflow-auto bg-navy-900 flex justify-center p-8 ${isDragging ? 'cursor-grabbing' : ''}`}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+    >
+      <div className="relative shadow-2xl" style={{ width: 'fit-content', height: 'fit-content' }}>
+        <canvas ref={canvasRef} className="block bg-white" />
 
-            {/* Annotation Overlay */}
-            {onAnnotationCreate && documentDimensions.width > 0 && (
-              <AnnotationOverlay
-                annotations={annotations}
-                documentType="pdf"
-                currentPage={currentPage}
-                containerWidth={containerDimensions.width}
-                containerHeight={containerDimensions.height}
-                documentWidth={documentDimensions.width}
-                documentHeight={documentDimensions.height}
-                onAnnotationClick={(annotation) => {
-                  if (onAnnotationClick) {
-                    onAnnotationClick(annotation);
-                  }
-                }}
-                onCreateAnnotation={(x, y, content) => {
-                  if (onAnnotationCreate) {
-                    onAnnotationCreate(x, y, content);
-                  }
-                }}
-              />
-            )}
-          </div>
-        </div>
+        {/* Annotation Overlay */}
+        <AnnotationOverlay
+          annotations={annotations}
+          documentType="pdf"
+          currentPage={currentPage}
+          containerWidth={containerDimensions.width}
+          containerHeight={containerDimensions.height}
+          documentWidth={documentDimensions.width}
+          documentHeight={documentDimensions.height}
+          onAnnotationClick={onAnnotationClick || (() => { })}
+          onCreateAnnotation={handleAnnotationCreate}
+        />
       </div>
     </div>
   );

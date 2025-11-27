@@ -2,6 +2,7 @@ import React, { useRef, useCallback, useState } from 'react';
 import AnnotationMarker from './AnnotationMarker';
 import AnnotationInput from './AnnotationInput';
 import type { Annotation, DocumentAnnotation, ImageAnnotation } from '../contexts/AppContext';
+import { useAppContext } from '../contexts/AppContext';
 
 interface AnnotationOverlayProps {
   annotations: Annotation[];
@@ -15,7 +16,7 @@ interface AnnotationOverlayProps {
   panOffset?: { x: number; y: number }; // For images
   isDragging?: boolean; // For images
   onAnnotationClick: (annotation: Annotation) => void;
-  onCreateAnnotation: (x: number, y: number, content: string) => void;
+  onCreateAnnotation: (x: number, y: number, content: string, color: string) => void;
 }
 
 const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
@@ -32,6 +33,7 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
   onAnnotationClick,
   onCreateAnnotation
 }) => {
+  const { state } = useAppContext();
   const overlayRef = useRef<HTMLDivElement>(null);
   const [inputState, setInputState] = useState<{
     isOpen: boolean;
@@ -121,9 +123,9 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
   }, [screenToStorage, isDragging]);
 
   // Handle annotation input save
-  const handleInputSave = useCallback((content: string) => {
+  const handleInputSave = useCallback((content: string, color: string) => {
     if (inputState) {
-      onCreateAnnotation(inputState.storageX, inputState.storageY, content);
+      onCreateAnnotation(inputState.storageX, inputState.storageY, content, color);
     }
     setInputState(null);
   }, [inputState, onCreateAnnotation]);
@@ -164,7 +166,7 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
         {/* Render annotation markers at correct screen positions */}
         {sortedAnnotations.map((annotation, index) => {
           const screenPos = storageToScreen(annotation);
-          const markerColor = isImageAnnotation(annotation) ? annotation.color : undefined;
+          const markerColor = annotation.color;
 
           return (
             <AnnotationMarker
@@ -176,6 +178,17 @@ const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
             />
           );
         })}
+
+        {/* Render preview marker when creating a new annotation */}
+        {inputState && (
+          <AnnotationMarker
+            number={sortedAnnotations.length + 1}
+            color={state.selectedColor}
+            position={{ x: inputState.screenX, y: inputState.screenY }}
+            onClick={() => { }} // No-op for preview marker
+            isHighlighted={true} // Highlight the preview marker
+          />
+        )}
       </div>
 
       {/* Annotation input dialog */}

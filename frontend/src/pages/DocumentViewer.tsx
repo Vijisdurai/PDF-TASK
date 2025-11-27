@@ -7,10 +7,9 @@ import { useAnnotations } from '../hooks/useAnnotations';
 import { useToast } from '../components/ToastContainer';
 import { EditAnnotationModal } from '../components/EditAnnotationModal';
 import DocumentViewer from '../components/DocumentViewer';
+import ColorPicker from '../components/ColorPicker';
 import { apiService } from '../services/api';
 import type { Annotation } from '../contexts/AppContext';
-
-
 
 const DocumentViewerPage: React.FC = () => {
   const { documentId } = useParams<{ documentId: string }>();
@@ -217,13 +216,27 @@ const DocumentViewerPage: React.FC = () => {
                 {/* Note content - editable or display - takes full height */}
                 <div className="flex-1 bg-white/5 backdrop-blur-sm rounded-lg p-4 border border-white/10 flex flex-col">
                   {isEditingInline ? (
-                    <textarea
-                      value={editedContent}
-                      onChange={(e) => setEditedContent(e.target.value)}
-                      className="flex-1 w-full bg-transparent text-off-white text-sm leading-relaxed resize-none focus:outline-none placeholder-gray-500"
-                      placeholder="Enter note content..."
-                      autoFocus
-                    />
+                    <div className="flex flex-col h-full gap-4">
+                      <textarea
+                        value={editedContent}
+                        onChange={(e) => setEditedContent(e.target.value)}
+                        className="flex-1 w-full bg-transparent text-off-white text-sm leading-relaxed resize-none focus:outline-none placeholder-gray-500"
+                        placeholder="Enter note content..."
+                        autoFocus
+                      />
+                      <div className="flex items-center justify-between pt-3 border-t border-white/10">
+                        <span className="text-xs text-gray-400">Marker Color</span>
+                        <ColorPicker
+                          selectedColor={pendingUpdates?.color || selectedNote.color || state.selectedColor}
+                          onSelect={(color) => {
+                            setPendingUpdates(prev => ({ ...prev, content: editedContent, color }));
+                            dispatch({ type: 'SET_SELECTED_COLOR', payload: color });
+                          }}
+                          align="right"
+                          direction="up"
+                        />
+                      </div>
+                    </div>
                   ) : (
                     <div className="text-off-white text-sm leading-relaxed whitespace-pre-wrap break-words">
                       {selectedNote.content}
@@ -249,7 +262,7 @@ const DocumentViewerPage: React.FC = () => {
                   </div>
                 )}
 
-                {!isEditingInline && selectedNote.type === 'image' && selectedNote.color && (
+                {!isEditingInline && selectedNote.color && (
                   <div className="mt-3 flex items-center justify-between text-xs">
                     <span className="text-gray-400">Marker Color</span>
                     <div className="flex items-center space-x-2">
@@ -274,7 +287,7 @@ const DocumentViewerPage: React.FC = () => {
                       className="flex gap-3 items-start"
                     >
                       {/* Note number badge - outside box on left */}
-                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-ocean-blue/80 text-white flex items-center justify-center text-xs font-semibold mt-0.5">
+                      <div className="flex-shrink-0 w-6 h-6 rounded-full bg-ocean-blue/80 text-white flex items-center justify-center text-xs font-semibold mt-0.5" style={{ backgroundColor: annotation.color || '#007BFF' }}>
                         {index + 1}
                       </div>
 

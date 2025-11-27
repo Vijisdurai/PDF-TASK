@@ -12,7 +12,7 @@ interface DocxViewerProps {
   onPageChange: (page: number) => void;
   onZoomChange: (scale: number) => void;
   onDocumentLoad?: (totalPages: number) => void;
-  onAnnotationCreate?: (xPercent: number, yPercent: number, content: string) => void;
+  onAnnotationCreate?: (xPercent: number, yPercent: number, content: string, color: string) => void;
   onAnnotationUpdate?: (id: string, content: string) => void;
   onAnnotationDelete?: (id: string) => void;
   annotations?: Annotation[];
@@ -399,9 +399,9 @@ const DocxViewer: React.FC<DocxViewerProps> = ({
                       onAnnotationClick(annotation);
                     }
                   }}
-                  onCreateAnnotation={(x, y, content) => {
+                  onCreateAnnotation={(x, y, content, color) => {
                     if (onAnnotationCreate) {
-                      onAnnotationCreate(x, y, content);
+                      onAnnotationCreate(x, y, content, color);
                     }
                   }}
                 />

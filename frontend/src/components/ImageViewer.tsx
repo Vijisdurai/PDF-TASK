@@ -10,7 +10,7 @@ interface ImageViewerProps {
   onZoomChange?: (scale: number) => void;
 
   annotations?: ImageAnnotation[];
-  onAnnotationCreate?: (a: Omit<ImageAnnotation, "id" | "createdAt" | "updatedAt">) => void;
+  onAnnotationCreate?: (xPixel: number, yPixel: number, content: string, color: string) => void;
   onAnnotationUpdate?: (id: string, updates: Partial<Omit<ImageAnnotation, "id" | "documentId" | "createdAt">>) => void;
   onAnnotationDelete?: (id: string) => void;
   onAnnotationClick?: (annotation: import("../contexts/AppContext").Annotation) => void;
@@ -232,8 +232,6 @@ export default function ImageViewer({
   const handleDoubleClick = (e: React.MouseEvent) => {
     // Zoom logic removed to allow double-click for annotations
     e.preventDefault();
-
-
   };
 
   // Fullscreen
@@ -252,23 +250,27 @@ export default function ImageViewer({
   }, []);
 
   // Annotation handlers
-  const handleAnnotationCreate = (xPixel: number, yPixel: number, content: string) => {
+  const handleAnnotationCreate = (xPixel: number, yPixel: number, content: string, color: string) => {
     // Ensure coordinates are integers and within bounds
     const safeX = Math.max(0, Math.min(imgNatural.w, Math.round(xPixel)));
     const safeY = Math.max(0, Math.min(imgNatural.h, Math.round(yPixel)));
 
-    const newAnn = {
-      type: "image" as const,
-      documentId,
-      xPixel: safeX,
-      yPixel: safeY,
-      content,
-      color: "#FFEB3B",
-    };
     if (onAnnotationCreate) {
-      onAnnotationCreate(newAnn);
+      onAnnotationCreate(safeX, safeY, content, color);
     } else {
-      setLocalAnnotations(prev => [...prev, { ...newAnn, id: crypto.randomUUID(), createdAt: new Date(), updatedAt: new Date() }]);
+      // Fallback for local testing if needed
+      const newAnn: ImageAnnotation = {
+        id: crypto.randomUUID(),
+        type: "image",
+        documentId,
+        xPixel: safeX,
+        yPixel: safeY,
+        content,
+        color,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      setLocalAnnotations(prev => [...prev, newAnn]);
     }
   };
 
