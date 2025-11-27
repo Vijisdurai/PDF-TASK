@@ -51,7 +51,8 @@ const AnnotationMarker: React.FC<AnnotationMarkerProps> = ({
   onClick,
   isHighlighted = false
 }) => {
-  const textColor = getTextColor(color);
+  const safeColor = color || '#000000';
+  const textColor = getTextColor(safeColor);
 
   return (
     <div
@@ -68,7 +69,7 @@ const AnnotationMarker: React.FC<AnnotationMarkerProps> = ({
       <div
         className="w-full h-full rounded-full flex items-center justify-center shadow-md"
         style={{
-          backgroundColor: color,
+          backgroundColor: safeColor,
           transform: isHighlighted ? 'scale(1.2)' : 'scale(1)',
           transition: 'transform 0.2s ease-in-out'
         }}

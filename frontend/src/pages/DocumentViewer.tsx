@@ -32,6 +32,14 @@ const DocumentViewerPage: React.FC = () => {
   // Find the document by ID
   const document = state.documents.find(doc => doc.id === documentId);
 
+  // Determine the effective MIME type - if document has been converted to PDF, use PDF MIME type
+  const effectiveMimeType = document ? (document.convertedPath ? 'application/pdf' : document.mimeType) : '';
+  const effectiveFilename = document
+    ? (document.convertedPath
+      ? `${document.originalFilename || document.filename}.pdf`
+      : (document.originalFilename || document.filename))
+    : '';
+
   // Set current document when component mounts
   useEffect(() => {
     if (document) {
@@ -41,9 +49,15 @@ const DocumentViewerPage: React.FC = () => {
 
   // Get document annotations
   const documentAnnotations = state.annotations.filter(a => a.documentId === documentId);
-  const currentPageAnnotations = documentAnnotations.filter(a =>
-    a.type === 'document' && a.page === state.viewerState.currentPage
-  );
+
+  // Filter annotations for the current view
+  const currentPageAnnotations = documentAnnotations.filter(a => {
+    if (document?.mimeType?.startsWith('image/')) {
+      return true; // Show all annotations for images
+    }
+    // For documents, filter by current page
+    return a.type === 'document' && a.page === state.viewerState.currentPage;
+  });
 
   // Handle annotation click from marker
   const handleAnnotationClick = useCallback((annotation: Annotation) => {
@@ -55,12 +69,14 @@ const DocumentViewerPage: React.FC = () => {
     setSelectedNote(annotation);
   }, [state.isNotePanelOpen, dispatch]);
 
-  // Handle note click from list
+  // Handle click on a note in the list
   const handleNoteClick = useCallback((annotation: Annotation) => {
-    setIsEditingInline(false); // Ensure we're not in edit mode
-    setEditedContent(''); // Clear any edited content
     setSelectedNote(annotation);
-  }, []);
+    // Optionally, navigate to the page of the annotation if it's not the current page
+    if (annotation.type === 'document' && annotation.page !== state.viewerState.currentPage) {
+      dispatch({ type: 'SET_VIEWER_STATE', payload: { currentPage: annotation.page } });
+    }
+  }, [dispatch, state.viewerState.currentPage]);
 
   // Handle back to list
   const handleBackToList = useCallback(() => {
@@ -79,14 +95,18 @@ const DocumentViewerPage: React.FC = () => {
 
   // Handle inline edit save
   const handleInlineSave = useCallback(() => {
-    setPendingUpdates({ content: editedContent });
+    setPendingUpdates(prev => ({
+      content: editedContent,
+      color: prev?.color || selectedNote?.color // Use existing color if not changed
+    }));
     setShowSaveConfirm(true);
-  }, [editedContent]);
+  }, [editedContent, selectedNote?.color]);
 
   // Handle inline edit cancel
   const handleInlineCancel = useCallback(() => {
     setIsEditingInline(false);
     setEditedContent('');
+    setPendingUpdates(null); // Clear pending updates if cancelled
   }, []);
 
   // Handle edit modal save - show confirmation
@@ -106,7 +126,7 @@ const DocumentViewerPage: React.FC = () => {
         setPendingUpdates(null);
         setIsEditingInline(false);
         setEditedContent('');
-        setSelectedNote(null);
+        setSelectedNote(null); // Deselect note after saving
       } catch (error) {
         console.error('Failed to update note:', error);
         showToast('Failed to update note', 'error');
@@ -139,12 +159,6 @@ const DocumentViewerPage: React.FC = () => {
 
   // Construct document URL for viewing using the API service
   const documentUrl = apiService.getDocumentFileUrl(document.id);
-
-  // Determine the effective MIME type - if document has been converted to PDF, use PDF MIME type
-  const effectiveMimeType = document.convertedPath ? 'application/pdf' : document.mimeType;
-  const effectiveFilename = document.convertedPath
-    ? `${document.originalFilename || document.filename}.pdf`
-    : (document.originalFilename || document.filename);
 
   const toggleNotesPanel = useCallback(() => {
     dispatch({ type: 'TOGGLE_NOTE_PANEL' });
@@ -211,69 +225,32 @@ const DocumentViewerPage: React.FC = () => {
           {/* Content - scrollable, takes remaining space */}
           <div className="flex-1 overflow-y-auto px-4 py-3 min-h-0 border-l border-navy-700">
             {selectedNote ? (
-              /* Note detail view */
-              <div className="h-full flex flex-col">
-                {/* Note content - editable or display - takes full height */}
-                <div className="flex-1 bg-white/5 backdrop-blur-sm rounded-lg p-4 border border-white/10 flex flex-col">
-                  {isEditingInline ? (
-                    <div className="flex flex-col h-full gap-4">
-                      <textarea
-                        value={editedContent}
-                        onChange={(e) => setEditedContent(e.target.value)}
-                        className="flex-1 w-full bg-transparent text-off-white text-sm leading-relaxed resize-none focus:outline-none placeholder-gray-500"
-                        placeholder="Enter note content..."
-                        autoFocus
+              <div className="flex-1 bg-white/5 backdrop-blur-sm rounded-lg p-4 border border-white/10 flex flex-col">
+                {isEditingInline ? (
+                  <div className="flex flex-col h-full gap-4">
+                    <textarea
+                      value={editedContent}
+                      onChange={(e) => setEditedContent(e.target.value)}
+                      className="flex-1 w-full bg-transparent text-off-white text-sm leading-relaxed resize-none focus:outline-none placeholder-gray-500"
+                      placeholder="Enter note content..."
+                      autoFocus
+                    />
+                    <div className="flex items-center justify-between pt-3 border-t border-white/10">
+                      <span className="text-xs text-gray-400">Marker Color</span>
+                      <ColorPicker
+                        selectedColor={pendingUpdates?.color || selectedNote.color || state.selectedColor}
+                        onSelect={(color) => {
+                          setPendingUpdates({ content: editedContent, color });
+                          dispatch({ type: 'SET_SELECTED_COLOR', payload: color });
+                        }}
+                        align="right"
+                        direction="up"
                       />
-                      <div className="flex items-center justify-between pt-3 border-t border-white/10">
-                        <span className="text-xs text-gray-400">Marker Color</span>
-                        <ColorPicker
-                          selectedColor={pendingUpdates?.color || selectedNote.color || state.selectedColor}
-                          onSelect={(color) => {
-                            setPendingUpdates(prev => ({ ...prev, content: editedContent, color }));
-                            dispatch({ type: 'SET_SELECTED_COLOR', payload: color });
-                          }}
-                          align="right"
-                          direction="up"
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-off-white text-sm leading-relaxed whitespace-pre-wrap break-words">
-                      {selectedNote.content}
-                    </div>
-                  )}
-                </div>
-
-                {/* Metadata footer - timestamp left, user right */}
-                {!isEditingInline && (
-                  <div className="mt-3 flex items-center justify-between text-xs text-gray-400">
-                    <div className="flex items-center gap-1.5">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <span>{format(new Date(selectedNote.createdAt), 'MMM dd, yyyy • h:mm a')}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
-                      <span>User</span>
                     </div>
                   </div>
-                )}
-
-                {!isEditingInline && selectedNote.color && (
-                  <div className="mt-3 flex items-center justify-between text-xs">
-                    <span className="text-gray-400">Marker Color</span>
-                    <div className="flex items-center space-x-2">
-                      <div
-                        className="w-5 h-5 rounded border border-white/30"
-                        style={{ backgroundColor: selectedNote.color }}
-                      />
-                      <span className="text-off-white text-xs font-mono">
-                        {selectedNote.color.toUpperCase()}
-                      </span>
-                    </div>
+                ) : (
+                  <div className="text-off-white text-sm leading-relaxed whitespace-pre-wrap break-words">
+                    {selectedNote.content}
                   </div>
                 )}
               </div>
@@ -332,6 +309,40 @@ const DocumentViewerPage: React.FC = () => {
               )
             )}
           </div>
+
+          {/* Metadata footer - timestamp left, user right */}
+          {!isEditingInline && selectedNote && (
+            <div className="px-4 py-3 border-t border-navy-700 border-l border-navy-700 flex-shrink-0 bg-navy-900">
+              <div className="flex items-center justify-between text-xs text-gray-400 mb-3">
+                <div className="flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>{format(new Date(selectedNote.createdAt), 'MMM dd, yyyy • h:mm a')}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <span>User</span>
+                </div>
+              </div>
+              {selectedNote.color && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-400">Marker Color</span>
+                  <div className="flex items-center space-x-2">
+                    <div
+                      className="w-5 h-5 rounded border border-white/30"
+                      style={{ backgroundColor: selectedNote.color }}
+                    />
+                    <span className="text-off-white text-xs font-mono">
+                      {selectedNote.color.toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Footer - only visible when note is selected */}
           {selectedNote && (

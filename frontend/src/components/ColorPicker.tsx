@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -100,44 +101,47 @@ const ColorPicker: React.FC<ColorPickerProps> = ({
                 <ChevronDown size={14} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </button>
 
-            <AnimatePresence>
-                {isOpen && (
-                    <motion.div
-                        initial={{ opacity: 0, y: direction === 'up' ? 10 : -10, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        transition={{ duration: 0.1 }}
-                        style={dropdownStyle}
-                        className={`${width !== 'w-full' ? width : ''} bg-navy-800/95 backdrop-blur-md border border-white/10 rounded-lg shadow-xl overflow-hidden`}
-                    >
-                        <div className="p-1 max-h-60 overflow-y-auto">
-                            {COLORS.map((color) => (
-                                <button
-                                    key={color.value}
-                                    onClick={() => {
-                                        onSelect(color.value);
-                                        setIsOpen(false);
-                                    }}
-                                    className="w-full flex items-center justify-between px-3 py-2 bg-transparent hover:bg-white/10 rounded-md transition-colors group"
-                                >
-                                    <div className="flex items-center space-x-3">
-                                        <div
-                                            className="w-4 h-4 rounded-full border border-white/20 shadow-sm"
-                                            style={{ backgroundColor: color.value }}
-                                        />
-                                        <span className="text-sm text-gray-300 group-hover:text-white transition-colors text-left">
-                                            {color.name}
-                                        </span>
-                                    </div>
-                                    {selectedColor.toLowerCase() === color.value.toLowerCase() && (
-                                        <Check size={14} className="text-ocean-blue" />
-                                    )}
-                                </button>
-                            ))}
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            {ReactDOM.createPortal(
+                <AnimatePresence>
+                    {isOpen && (
+                        <motion.div
+                            initial={{ opacity: 0, y: direction === 'up' ? 10 : -10, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ duration: 0.1 }}
+                            style={dropdownStyle}
+                            className={`${width !== 'w-full' ? width : ''} bg-navy-800/95 backdrop-blur-md border border-white/10 rounded-lg shadow-xl overflow-hidden`}
+                        >
+                            <div className="p-1 max-h-60 overflow-y-auto">
+                                {COLORS.map((color) => (
+                                    <button
+                                        key={color.value}
+                                        onClick={() => {
+                                            onSelect(color.value);
+                                            setIsOpen(false);
+                                        }}
+                                        className="w-full flex items-center justify-between px-3 py-2 bg-transparent hover:bg-white/10 rounded-md transition-colors group"
+                                    >
+                                        <div className="flex items-center space-x-3">
+                                            <div
+                                                className="w-4 h-4 rounded-full border border-white/20 shadow-sm"
+                                                style={{ backgroundColor: color.value }}
+                                            />
+                                            <span className="text-sm text-gray-300 group-hover:text-white transition-colors text-left">
+                                                {color.name}
+                                            </span>
+                                        </div>
+                                        {selectedColor.toLowerCase() === color.value.toLowerCase() && (
+                                            <Check size={14} className="text-ocean-blue" />
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>,
+                document.body
+            )}
         </div>
     );
 };

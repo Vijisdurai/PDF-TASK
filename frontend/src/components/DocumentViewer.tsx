@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppContext } from '../contexts/AppContext';
 import { useAnnotations } from '../hooks/useAnnotations';
@@ -318,6 +318,4 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({
       </AnimatePresence>
     </div>
   );
-};
-
-export default DocumentViewer;
+};export default DocumentViewer;

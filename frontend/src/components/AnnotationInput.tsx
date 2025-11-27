@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Save, X, Edit3, Trash2 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
@@ -163,7 +164,7 @@ const AnnotationInput: React.FC<AnnotationInputProps> = ({
 
   if (!isOpen) return null;
 
-  return (
+  return ReactDOM.createPortal(
     <AnimatePresence>
       <motion.div
         ref={containerRef}
@@ -313,7 +314,8 @@ const AnnotationInput: React.FC<AnnotationInputProps> = ({
           />
         </div>
       </motion.div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 };
 

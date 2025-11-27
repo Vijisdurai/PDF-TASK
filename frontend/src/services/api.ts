@@ -255,6 +255,7 @@ class ApiService {
         page: backendAnnotation.page,
         xPercent: Number(backendAnnotation.x_percent),
         yPercent: Number(backendAnnotation.y_percent),
+        color: backendAnnotation.color,
       };
     } else {
       return {
@@ -270,20 +271,23 @@ class ApiService {
   // Transform annotation from frontend format to backend format
   private transformAnnotationToBackend(annotation: Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>): any {
     if (annotation.type === 'document') {
+      const docAnn = annotation as any;
       return {
         annotation_type: 'document',
         document_id: annotation.documentId,
-        page: annotation.page,
-        x_percent: annotation.xPercent,
-        y_percent: annotation.yPercent,
+        page: docAnn.page,
+        x_percent: docAnn.xPercent,
+        y_percent: docAnn.yPercent,
         content: annotation.content,
+        color: annotation.color,
       };
     } else {
+      const imgAnn = annotation as any;
       return {
         annotation_type: 'image',
         document_id: annotation.documentId,
-        x_pixel: Math.round(annotation.xPixel),
-        y_pixel: Math.round(annotation.yPixel),
+        x_pixel: Math.round(imgAnn.xPixel),
+        y_pixel: Math.round(imgAnn.yPixel),
         content: annotation.content,
         color: annotation.color,
       };
@@ -293,29 +297,30 @@ class ApiService {
   // Transform annotation update from frontend format to backend format
   private transformAnnotationUpdateToBackend(updates: Partial<Omit<Annotation, 'id' | 'documentId' | 'createdAt'>>): any {
     const payload: any = {};
+    const anyUpdates = updates as any;
 
     if (updates.content !== undefined) {
       payload.content = updates.content;
     }
 
-    if ('page' in updates && updates.page !== undefined) {
-      payload.page = updates.page;
+    if ('page' in updates && anyUpdates.page !== undefined) {
+      payload.page = anyUpdates.page;
     }
 
-    if ('xPercent' in updates && updates.xPercent !== undefined) {
-      payload.x_percent = updates.xPercent;
+    if ('xPercent' in updates && anyUpdates.xPercent !== undefined) {
+      payload.x_percent = anyUpdates.xPercent;
     }
 
-    if ('yPercent' in updates && updates.yPercent !== undefined) {
-      payload.y_percent = updates.yPercent;
+    if ('yPercent' in updates && anyUpdates.yPercent !== undefined) {
+      payload.y_percent = anyUpdates.yPercent;
     }
 
-    if ('xPixel' in updates && updates.xPixel !== undefined) {
-      payload.x_pixel = Math.round(updates.xPixel);
+    if ('xPixel' in updates && anyUpdates.xPixel !== undefined) {
+      payload.x_pixel = Math.round(anyUpdates.xPixel);
     }
 
-    if ('yPixel' in updates && updates.yPixel !== undefined) {
-      payload.y_pixel = Math.round(updates.yPixel);
+    if ('yPixel' in updates && anyUpdates.yPixel !== undefined) {
+      payload.y_pixel = Math.round(anyUpdates.yPixel);
     }
 
     if ('color' in updates && updates.color !== undefined) {
