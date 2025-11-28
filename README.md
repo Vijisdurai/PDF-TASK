@@ -68,3 +68,11 @@ npm run dev
 - **"uvicorn is not recognized"**: Ensure you have activated the virtual environment before running the backend.
 - **Port Conflicts**: If port 8000 or 5173 is in use, the servers may fail to start. Free up the ports or configure different ones.
 - **Missing Modules**: If you see "Module not found" errors, double-check that you have run the install commands in the respective directories.
+
+## 5. Documentation
+For more detailed information, please refer to the `docs/` directory:
+- [System Overview](docs/01_SYSTEM_OVERVIEW.md)
+- [Technical Implementation](docs/02_TECHNICAL_IMPLEMENTATION.md)
+- [User Manual & Features](docs/03_USER_MANUAL_AND_FEATURES.md)
+- [Setup Guide](docs/04_SETUP_GUIDE.md)
+- [API & Data Models](docs/05_API_AND_DATA_MODELS.md)

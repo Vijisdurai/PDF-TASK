@@ -49,9 +49,27 @@
 - **Images**: Standard HTML `<img>` tags are used, wrapped in `react-zoom-pan-pinch` for interactive capabilities.
 
 ### Annotation System
-- **Coordinate System**: Annotations are stored with normalized coordinates (0-1 range) relative to the document container. This ensures they remain correctly positioned regardless of zoom level or screen size.
-- **Persistence**: Annotations are saved to the backend database via API calls and cached locally in IndexedDB for performance.
+- **Coordinate System**:
+    - **PDF/DOCX**: Uses percentage-based coordinates (`xPercent`, `yPercent`) relative to the page dimensions. This ensures annotations stay correctly positioned regardless of the viewing device or zoom level.
+    - **Images**: Uses pixel-based coordinates (`xPixel`, `yPixel`) relative to the original image dimensions.
+- **Data Model**: Annotations include properties for `content`, `color`, `page` (for multi-page docs), and timestamps.
+- **Persistence**:
+    - **Backend**: Annotations are stored in the SQLite database via the `api.ts` service.
+    - **Offline Support**: `database.ts` manages IndexedDB storage using Dexie.js, allowing for offline access and optimistic UI updates.
+    - **Color Persistence**: The `color` property is explicitly handled during data transformation to ensure it persists across sessions and reloads.
 
 ### Zoom & Pan
 - Implemented using `react-zoom-pan-pinch`, providing a unified experience across all document types (PDF, DOCX, Image).
 - Custom controls in the toolbar trigger these transformations programmatically.
+
+## 4. Services & Data Layer
+
+### API Service (`src/services/api.ts`)
+- Handles all HTTP communication with the backend.
+- Implements data transformation methods (`transformAnnotationFromBackend`, `transformAnnotationToBackend`) to convert between backend snake_case and frontend camelCase formats.
+- Manages error handling and retries for network requests.
+
+### Database Service (`src/services/database.ts`)
+- Wraps Dexie.js for IndexedDB operations.
+- Provides methods for CRUD operations on documents and annotations.
+- Handles synchronization status (`synced`, `pending`, `error`) for offline-first functionality.

@@ -20,10 +20,13 @@ The viewer provides a rich interface for reading documents:
 
 ### 2.3 Annotation System
 Add notes and highlights to your documents:
-- **Adding an Annotation**: Click anywhere on the document surface to place a marker.
-- **Editing**: Click an existing marker to open the annotation panel and edit the text.
+- **Adding an Annotation**: Double-click anywhere on the document surface to place a marker.
+- **Editing**:
+    - **Inline Edit**: Click the "Edit" (pencil) icon on a selected note to edit content directly in the panel.
+    - **Color Selection**: Choose a color for your annotation marker from the color picker during creation or editing.
 - **Deleting**: Select an annotation and click the "Delete" (trash can) icon.
 - **Visibility**: Annotations remain fixed to their position on the document, scaling correctly when you zoom or pan.
+- **Persistence**: Annotation colors and content are saved automatically and persist even after reloading the page.
 
 ### 2.4 Image Viewer Specifics
 - **Windows-Style Toolbar**: The image viewer features a floating glassmorphic toolbar similar to the Windows Photos app.
