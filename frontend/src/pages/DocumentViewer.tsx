@@ -5,7 +5,7 @@ import { format } from 'date-fns';
 import { useAppContext } from '../contexts/AppContext';
 import { useAnnotations } from '../hooks/useAnnotations';
 import { useToast } from '../components/ToastContainer';
-import { EditAnnotationModal } from '../components/EditAnnotationModal';
+
 import DocumentViewer from '../components/DocumentViewer';
 import ColorPicker from '../components/ColorPicker';
 import { apiService } from '../services/api';
@@ -22,7 +22,7 @@ const DocumentViewerPage: React.FC = () => {
   } = useAnnotations(documentId);
 
   const [selectedNote, setSelectedNote] = useState<Annotation | null>(null);
-  const [showEditModal, setShowEditModal] = useState(false);
+
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [pendingUpdates, setPendingUpdates] = useState<{ content: string; color?: string } | null>(null);
@@ -121,7 +121,6 @@ const DocumentViewerPage: React.FC = () => {
       try {
         await updateAnnotation(selectedNote.id, pendingUpdates);
         showToast('Note updated', 'success', 2000);
-        setShowEditModal(false);
         setShowSaveConfirm(false);
         setPendingUpdates(null);
         setIsEditingInline(false);
@@ -134,12 +133,11 @@ const DocumentViewerPage: React.FC = () => {
     }
   }, [selectedNote, pendingUpdates, updateAnnotation, showToast]);
 
-  // Handle edit modal delete
-  const handleEditDelete = useCallback(async () => {
+  // Handle delete
+  const handleDelete = useCallback(async () => {
     if (selectedNote) {
       // Close modals and navigate back immediately for smooth UX
       setShowDeleteConfirm(false);
-      setShowEditModal(false);
       setSelectedNote(null);
 
       // Then perform the delete operation in the background
@@ -386,17 +384,6 @@ const DocumentViewerPage: React.FC = () => {
         </div>
       )}
 
-      {/* Edit Modal */}
-      {selectedNote && showEditModal && (
-        <EditAnnotationModal
-          annotation={selectedNote}
-          isOpen={showEditModal}
-          onClose={() => setShowEditModal(false)}
-          onSave={handleEditSave}
-          onDelete={handleEditDelete}
-        />
-      )}
-
       {/* Delete Confirmation Overlay */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -415,7 +402,7 @@ const DocumentViewerPage: React.FC = () => {
                 Cancel
               </button>
               <button
-                onClick={handleEditDelete}
+                onClick={handleDelete}
                 className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded hover:bg-red-700 transition-colors"
               >
                 Delete

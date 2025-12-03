@@ -62,14 +62,48 @@ npm run dev
 ```
 *The frontend will start at http://localhost:5173 (or similar)*
 
-## 4. Troubleshooting
+## 4. Project Structure
+
+### Root Directory
+- `backend/`: Python FastAPI backend
+- `frontend/`: React + TypeScript frontend
+- `docs/`: Project documentation
+- `run.bat`: Windows startup script
+
+### Backend (`backend/`)
+- `app/`: Main application package
+  - `api/`: API route handlers
+  - `core/`: Core configuration and settings
+  - `database/`: Database connection and session management
+  - `models/`: SQLAlchemy database models
+  - `schemas/`: Pydantic schemas for request/response validation
+  - `services/`: Business logic and service layer
+- `main.py`: Application entry point
+- `requirements.txt`: Python dependencies
+- `annotations.db`: SQLite database file
+
+### Frontend (`frontend/`)
+- `src/`: Source code
+  - `components/`: Reusable UI components
+  - `contexts/`: React contexts (e.g., AppContext)
+  - `hooks/`: Custom React hooks
+  - `pages/`: Application pages (e.g., DocumentViewerPage)
+  - `services/`: API client services
+  - `types/`: TypeScript type definitions
+  - `utils/`: Utility functions
+  - `App.tsx`: Main application component
+  - `main.tsx`: Entry point
+- `vite.config.ts`: Vite configuration
+- `tailwind.config.js`: Tailwind CSS configuration
+
+## 5. Troubleshooting
 
 ### Common Issues
 - **"uvicorn is not recognized"**: Ensure you have activated the virtual environment before running the backend.
 - **Port Conflicts**: If port 8000 or 5173 is in use, the servers may fail to start. Free up the ports or configure different ones.
 - **Missing Modules**: If you see "Module not found" errors, double-check that you have run the install commands in the respective directories.
 
-## 5. Documentation
+## 6. Documentation
 For more detailed information, please refer to the `docs/` directory:
 - [System Overview](docs/01_SYSTEM_OVERVIEW.md)
 - [Technical Implementation](docs/02_TECHNICAL_IMPLEMENTATION.md)
