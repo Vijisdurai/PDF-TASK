@@ -42,6 +42,11 @@ env/
 htmlcov/
 *.spec
 
+# UV Python Package Manager
+.python-version.bak
+uv.lock.bak
+.uv_cache/
+
 # Database
 *.db
 *.sqlite3
